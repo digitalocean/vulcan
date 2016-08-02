@@ -6,8 +6,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-// The scraper should be able to answer to a query what targets are running and
-// group them by job.
+// Scraper answers to a query on which targets are running and groups them
+// by job.
 type Scraper struct {
 	Targeter Targeter
 	Writer   Writer
@@ -16,12 +16,15 @@ type Scraper struct {
 	once     sync.Once
 }
 
-type ScraperConfig struct {
+// Config represents an instance of a scraper configuration.
+// It contains a Targeter interface and a Writer interface.
+type Config struct {
 	Targeter Targeter
 	Writer   Writer
 }
 
-func NewScraper(config *ScraperConfig) *Scraper {
+// NewScraper returns a new Scraper instance from the provided Config.
+func NewScraper(config *Config) *Scraper {
 	return &Scraper{
 		Targeter: config.Targeter,
 		Writer:   config.Writer,
@@ -30,7 +33,8 @@ func NewScraper(config *ScraperConfig) *Scraper {
 	}
 }
 
-func (s Scraper) Run() error {
+// Run ranges over the Scraper's targets and does work on them.
+func (s *Scraper) Run() error {
 	for job := range s.Targeter.Targets() {
 		s.set(job)
 		log.WithField("job_name", job.JobName).WithField("target_count", len(job.Targets)).Info("scraping job")
@@ -38,7 +42,7 @@ func (s Scraper) Run() error {
 	return nil
 }
 
-func (s Scraper) set(job Job) {
+func (s *Scraper) set(job Job) {
 	workers := s.running[job.JobName]
 	next := map[Instance]*Worker{}
 	for instance, target := range job.Targets {
@@ -68,7 +72,8 @@ func (s Scraper) set(job Job) {
 	s.running[job.JobName] = next
 }
 
-func (s Scraper) Stop() {
+// Stop signals the Scraper instance to stop running.
+func (s *Scraper) Stop() {
 	s.once.Do(func() {
 		close(s.done)
 	})
