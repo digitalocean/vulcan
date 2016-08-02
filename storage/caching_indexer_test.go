@@ -20,9 +20,9 @@ func (mi *mockIndexer) IndexSample(*bus.Sample) error {
 	return nil
 }
 
-func (mi mockIndexer) Describe(ch chan<- *prometheus.Desc) {}
+func (mi *mockIndexer) Describe(ch chan<- *prometheus.Desc) {}
 
-func (mi mockIndexer) Collect(ch chan<- prometheus.Metric) {}
+func (mi *mockIndexer) Collect(ch chan<- prometheus.Metric) {}
 
 func TestCachingIndexer(t *testing.T) {
 	mi := &mockIndexer{}
