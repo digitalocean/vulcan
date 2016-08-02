@@ -6,13 +6,14 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/digitalocean/vulcan/scraper"
-	"github.com/samuel/go-zookeeper/zk"
 
+	log "github.com/Sirupsen/logrus"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/dns"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 type PathTargeter struct {
@@ -87,6 +88,11 @@ func (pt PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 	if err != nil {
 		return jobs, err
 	}
+
+	if len(c.ScrapeConfigs) < 1 {
+		return jobs, errors.New("no scrape configs provided")
+	}
+
 	for _, sc := range c.ScrapeConfigs {
 		j := scraper.Job{
 			JobName: scraper.JobName(sc.JobName),
