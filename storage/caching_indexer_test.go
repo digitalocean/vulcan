@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type mockIndexer struct {
