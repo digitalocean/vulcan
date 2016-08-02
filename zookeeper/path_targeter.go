@@ -16,6 +16,8 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+// PathTargeter represents an object that connects to Zookeeper and queries
+// a zk path for Vulcan scrape configurations.
 type PathTargeter struct {
 	conn *zk.Conn
 	path string
@@ -25,11 +27,13 @@ type PathTargeter struct {
 	once sync.Once
 }
 
+// PathTargeterConfig represents the configuration of a PathTargeter.
 type PathTargeterConfig struct {
 	Conn *zk.Conn
 	Path string
 }
 
+// NewPathTargeter creates a new instance of PathTargeter.
 func NewPathTargeter(config *PathTargeterConfig) *PathTargeter {
 	pt := &PathTargeter{
 		conn: config.Conn,
@@ -42,11 +46,13 @@ func NewPathTargeter(config *PathTargeterConfig) *PathTargeter {
 	return pt
 }
 
-func (pt PathTargeter) Targets() <-chan scraper.Job {
+// Targets implements scraper.Targeter interface.
+// Returns a channel that feeds available jobs.
+func (pt *PathTargeter) Targets() <-chan scraper.Job {
 	return pt.out
 }
 
-func (pt PathTargeter) run() {
+func (pt *PathTargeter) run() {
 	defer close(pt.out)
 	for {
 		// escape
@@ -82,7 +88,7 @@ func (pt PathTargeter) run() {
 	}
 }
 
-func (pt PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
+func (pt *PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 	jobs := []scraper.Job{}
 	c, err := pconfig.Load(string(b))
 	if err != nil {
@@ -120,7 +126,7 @@ func (pt PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 	return jobs, nil
 }
 
-func (pt PathTargeter) stop() {
+func (pt *PathTargeter) stop() {
 	pt.once.Do(func() {
 		close(pt.done)
 		// drain

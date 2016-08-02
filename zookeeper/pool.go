@@ -6,7 +6,6 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -22,6 +21,7 @@ type Pool struct {
 	once sync.Once
 }
 
+// NewPool returns a new instance of Pool.
 func NewPool(config *PoolConfig) (*Pool, error) {
 	p := &Pool{
 		id:   config.ID,
@@ -35,6 +35,7 @@ func NewPool(config *PoolConfig) (*Pool, error) {
 	return p, nil
 }
 
+// PoolConfig represents the configuration of a Pool object.
 type PoolConfig struct {
 	ID   string
 	Conn *zk.Conn
@@ -42,7 +43,7 @@ type PoolConfig struct {
 	Pool string
 }
 
-func (p Pool) run() {
+func (p *Pool) run() {
 	defer close(p.out)
 	mypath := path.Join(p.path, p.id)
 	mylog := log.WithFields(log.Fields{
@@ -86,12 +87,14 @@ func (p Pool) run() {
 	}
 }
 
-func (p Pool) Stop() {
+// Stop signals the current Pool instance to stop running.
+func (p *Pool) Stop() {
 	p.once.Do(func() {
 		close(p.done)
 	})
 }
 
-func (p Pool) Scrapers() <-chan []string {
+// Scrapers returns a channel that sends a slice of active Scraper instances.
+func (p *Pool) Scrapers() <-chan []string {
 	return p.out
 }

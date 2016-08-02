@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/scraper"
-	"github.com/samuel/go-zookeeper/zk"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 // Targeter uses zookeeper as a backend for configuring jobs that vulcan should scrape.
@@ -22,6 +22,7 @@ type Targeter struct {
 	out      chan scraper.Job
 }
 
+// NewTargeter returns a new instance of Targeter.
 func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 	t := &Targeter{
 		conn: config.Conn,
@@ -34,17 +35,20 @@ func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 	return t, nil
 }
 
+// TargeterConfig represents the configuration of a Targeter.
 type TargeterConfig struct {
 	Conn *zk.Conn
 	Root string
 	Pool string
 }
 
-func (t Targeter) Targets() <-chan scraper.Job {
+// Targets implements scraper.Targeter interface.
+// Returns a channel that feeds available jobs.
+func (t *Targeter) Targets() <-chan scraper.Job {
 	return t.out
 }
 
-func (t Targeter) run() {
+func (t *Targeter) run() {
 	defer close(t.out)
 	log.WithField("path", t.path).Info("reading jobs from zookeeper")
 	for {
@@ -63,7 +67,7 @@ func (t Targeter) run() {
 	}
 }
 
-func (t Targeter) setChildren(cn []string) {
+func (t *Targeter) setChildren(cn []string) {
 	next := map[string]*PathTargeter{}
 	for _, c := range cn {
 		if pt, ok := t.children[c]; ok {
