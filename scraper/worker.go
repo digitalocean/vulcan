@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Worker represents an instance of a scraper worker.
 type Worker struct {
 	jobName  JobName
 	instance Instance
@@ -16,6 +17,7 @@ type Worker struct {
 	once     sync.Once
 }
 
+// NewWorker creates a new instance of a Worker.
 func NewWorker(config *WorkerConfig) *Worker {
 	w := &Worker{
 		jobName:  config.JobName,
@@ -28,6 +30,7 @@ func NewWorker(config *WorkerConfig) *Worker {
 	return w
 }
 
+// WorkerConfig respresents an instance of a Worker's configuration.
 type WorkerConfig struct {
 	JobName  JobName
 	Instance Instance
@@ -35,9 +38,9 @@ type WorkerConfig struct {
 	Writer   Writer
 }
 
-func (w Worker) run() {
+func (w *Worker) run() {
 	splay := time.Duration(rand.Int63n(int64(w.Target.Interval()))) // TODO make this a consistent splay based off of metric name
-	ticker := NewSplayTicker(splay, w.Target.Interval())
+	ticker := newSplayTicker(splay, w.Target.Interval())
 	nowch := ticker.C()
 	defer ticker.Stop()
 	for {
@@ -58,11 +61,13 @@ func (w Worker) run() {
 	}
 }
 
-func (w Worker) Retarget(t Target) {
+// Retarget sets the current Worker's target to the parameter t.
+func (w *Worker) Retarget(t Target) {
 	w.Target = t
 }
 
-func (w Worker) Stop() {
+// Stop signals the current Worker instance to stop running.
+func (w *Worker) Stop() {
 	w.once.Do(func() {
 		close(w.done)
 	})

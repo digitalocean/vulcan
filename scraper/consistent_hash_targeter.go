@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/serialx/hashring"
-
 	log "github.com/Sirupsen/logrus"
+	"github.com/serialx/hashring"
 )
 
+// ConsistentHashTargeter represents an object that orchestrates work between
+// Zookeeper targets and available worker nodes in the pool.
 type ConsistentHashTargeter struct {
 	id      string
 	pool    <-chan []string
@@ -19,6 +20,8 @@ type ConsistentHashTargeter struct {
 	curJobs map[JobName]Job
 }
 
+// NewConsistentHashTargeter returns a new instance of a ConsistentHashTargeter
+// object.
 func NewConsistentHashTargeter(config *ConsistentHashTargeterConfig) *ConsistentHashTargeter {
 	cht := &ConsistentHashTargeter{
 		id:      config.ID,
@@ -32,17 +35,20 @@ func NewConsistentHashTargeter(config *ConsistentHashTargeterConfig) *Consistent
 	return cht
 }
 
+// ConsistentHashTargeterConfig represents an configuration for a
+// ConsistentHashTargeter object.
 type ConsistentHashTargeterConfig struct {
 	Targeter Targeter
 	ID       string
 	Pool     Pool
 }
 
-func (cht ConsistentHashTargeter) Targets() <-chan Job {
+// Targets returns a channel that feeds current available jobs.
+func (cht *ConsistentHashTargeter) Targets() <-chan Job {
 	return cht.out
 }
 
-func (cht ConsistentHashTargeter) run() {
+func (cht *ConsistentHashTargeter) run() {
 	for {
 		select {
 		case nextPool, ok := <-cht.pool:
@@ -63,7 +69,7 @@ func (cht ConsistentHashTargeter) run() {
 	}
 }
 
-func (cht ConsistentHashTargeter) rehash(jobName JobName) {
+func (cht *ConsistentHashTargeter) rehash(jobName JobName) {
 	job := cht.curJobs[jobName]
 	if len(job.Targets) == 0 {
 		cht.out <- job
@@ -77,13 +83,13 @@ func (cht ConsistentHashTargeter) rehash(jobName JobName) {
 	}
 }
 
-func (cht ConsistentHashTargeter) rehashAll() {
-	for jobName, _ := range cht.curJobs {
+func (cht *ConsistentHashTargeter) rehashAll() {
+	for jobName := range cht.curJobs {
 		cht.rehash(jobName)
 	}
 }
 
-func (cht ConsistentHashTargeter) hashTargets(jobName JobName, targets map[Instance]Target) map[Instance]Target {
+func (cht *ConsistentHashTargeter) hashTargets(jobName JobName, targets map[Instance]Target) map[Instance]Target {
 	result := map[Instance]Target{}
 	ring := hashring.New(cht.curPool)
 	for instance, target := range targets {

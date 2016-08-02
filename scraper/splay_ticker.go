@@ -12,7 +12,7 @@ type splayTicker struct {
 	once   sync.Once
 }
 
-func NewSplayTicker(splay, interval time.Duration) *splayTicker {
+func newSplayTicker(splay, interval time.Duration) *splayTicker {
 	st := &splayTicker{
 		ch:   make(chan time.Time),
 		done: make(chan struct{}),

@@ -75,7 +75,7 @@ var Scraper = &cobra.Command{
 
 		// create the scraper which orchestrates scraping targets and writing their
 		// results to the upstream
-		s := scraper.NewScraper(&scraper.ScraperConfig{
+		s := scraper.NewScraper(&scraper.Config{
 			Targeter: ft,
 			Writer:   w,
 		})

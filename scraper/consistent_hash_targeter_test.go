@@ -46,7 +46,7 @@ func TestConsistentHashTargeter(t *testing.T) {
 		mt.out <- Job{
 			JobName: "test",
 			Targets: map[Instance]Target{
-				"test-1": HTTPTarget{},
+				"test-1": &HTTPTarget{},
 			},
 		}
 	}()

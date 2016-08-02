@@ -13,16 +13,19 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
+// HTTPTarget represents an instance of an HTTP scraper target.
 type HTTPTarget struct {
 	u url.URL
 	i time.Duration
 }
 
+// HTTPTargetConfig represents the configuration of an HTTPTarget.
 type HTTPTargetConfig struct {
 	Interval time.Duration
 	URL      url.URL
 }
 
+// NewHTTPTarget creates an instance of HTTPTarget.
 func NewHTTPTarget(config *HTTPTargetConfig) *HTTPTarget {
 	return &HTTPTarget{
 		u: config.URL,
@@ -30,15 +33,19 @@ func NewHTTPTarget(config *HTTPTargetConfig) *HTTPTarget {
 	}
 }
 
-func (ht HTTPTarget) Equals(other Target) bool {
-	ot, ok := other.(HTTPTarget)
+// Equals checkfs if the instance's current target is the same as the
+// parameter other.
+func (ht *HTTPTarget) Equals(other Target) bool {
+	ot, ok := other.(*HTTPTarget)
 	if !ok {
 		return false
 	}
 	return ot.u == ht.u
 }
 
-func (ht HTTPTarget) Fetch() ([]*dto.MetricFamily, error) {
+// Fetch polls the target's metric endpoint for data and transforms it into
+// a prometheus MetricFamily type.
+func (ht *HTTPTarget) Fetch() ([]*dto.MetricFamily, error) {
 	at := time.Now() // timestamp metrics with time scraper initiated
 	fam, err := ht.fetch()
 	if err != nil {
@@ -48,7 +55,8 @@ func (ht HTTPTarget) Fetch() ([]*dto.MetricFamily, error) {
 	return fam, nil
 }
 
-func (ht HTTPTarget) Interval() time.Duration {
+// Interval returns the current targets interval.
+func (ht *HTTPTarget) Interval() time.Duration {
 	return ht.i
 }
 
