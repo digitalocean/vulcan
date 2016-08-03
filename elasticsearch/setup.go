@@ -45,6 +45,8 @@ const matchAll = `{
   }
 }`
 
+// SetupMatchTemplate sets up elastic search templates for the type of text
+// query we need to run
 func SetupMatchTemplate(base string) error {
 	url := fmt.Sprintf("%s/_template/match_all_0", base)
 	_, err := http.Post(url, "text/json", strings.NewReader(matchAll))

@@ -5,11 +5,14 @@ import (
 
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+
 	"github.com/olivere/elastic"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type sampleIndexer struct {
+// SampleIndexer represents an object that takes bus messages and
+// makes indexing decisions on the target ElasticSearch cluster.
+type SampleIndexer struct {
 	prometheus.Collector
 	Client *elastic.Client
 	Index  string
@@ -17,13 +20,15 @@ type sampleIndexer struct {
 	indexDurations *prometheus.SummaryVec
 }
 
+// SampleIndexerConfig represents the configuration of a SampleIndexer.
 type SampleIndexerConfig struct {
 	Client *elastic.Client
 	Index  string
 }
 
-func NewSampleIndexer(config *SampleIndexerConfig) *sampleIndexer {
-	return &sampleIndexer{
+// NewSampleIndexer creates a new instance of SampleIndexer.
+func NewSampleIndexer(config *SampleIndexerConfig) *SampleIndexer {
+	return &SampleIndexer{
 		Client: config.Client,
 		Index:  config.Index,
 		indexDurations: prometheus.NewSummaryVec(
@@ -38,11 +43,15 @@ func NewSampleIndexer(config *SampleIndexerConfig) *sampleIndexer {
 	}
 }
 
-func (si sampleIndexer) Describe(ch chan<- *prometheus.Desc) {
+// Describe implements prometheus.Collector.  Sends decriptors of the
+// instance's indexDurations to the parameter ch.
+func (si *SampleIndexer) Describe(ch chan<- *prometheus.Desc) {
 	si.indexDurations.Describe(ch)
 }
 
-func (si sampleIndexer) Collect(ch chan<- prometheus.Metric) {
+// Collect implements prometheus.Collector.  Sends metrics collected bu the
+// instance's indexDurations to the parameter ch.
+func (si *SampleIndexer) Collect(ch chan<- prometheus.Metric) {
 	si.indexDurations.Collect(ch)
 }
 
@@ -56,7 +65,8 @@ func metricToESBody(m bus.Metric) (map[string]string, error) {
 	return labels, nil
 }
 
-func (si *sampleIndexer) IndexSample(s *bus.Sample) error {
+// IndexSample implements the SampleIndexer interface.
+func (si *SampleIndexer) IndexSample(s *bus.Sample) error {
 	t0 := time.Now()
 	key, err := convert.MetricToKey(s.Metric)
 	if err != nil {
