@@ -11,11 +11,14 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
+// Writer represents an object that encapsulates the behavior of a Kafka
+// producter.
 type Writer struct {
 	producer sarama.SyncProducer
 	topic    string
 }
 
+// NewWriter creates a new instance of Writer.
 func NewWriter(config *WriterConfig) (*Writer, error) {
 	cfg := sarama.NewConfig()
 	cfg.ClientID = config.ClientID
@@ -30,13 +33,15 @@ func NewWriter(config *WriterConfig) (*Writer, error) {
 	}, nil
 }
 
+// WriterConfig represents the configuration of a Writer object.
 type WriterConfig struct {
 	ClientID string
 	Addrs    []string
 	Topic    string
 }
 
-func (w Writer) Write(job scraper.JobName, instance scraper.Instance, fams []*dto.MetricFamily) error {
+// Write sends metrics to the Kafka message bus.
+func (w *Writer) Write(job scraper.JobName, instance scraper.Instance, fams []*dto.MetricFamily) error {
 	buf := &bytes.Buffer{}
 	encoder := expfmt.NewEncoder(buf, expfmt.FmtText)
 	for _, f := range fams {

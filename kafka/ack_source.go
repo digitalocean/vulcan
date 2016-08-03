@@ -6,23 +6,32 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+
+	"github.com/Shopify/sarama"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/supershabam/pipeliner"
 )
 
+// Converter is an interface that wraps the Convert method.
 type Converter interface {
+	// Convert converts a Kafka consumer message to be processed by ingesters
+	// and indexers.
 	Convert(*sarama.ConsumerMessage) (bus.SampleGroup, error)
 }
 
+// DefaultConverter represents an oject has encapsulates the default Convert
+// method.
 type DefaultConverter struct{}
 
+// Convert implements Converter.
 func (dc DefaultConverter) Convert(msg *sarama.ConsumerMessage) (bus.SampleGroup, error) {
 	return convert.PromTextToSG(bytes.NewReader(msg.Value))
 }
 
+// AckSource represents an object that processes SampleGroups received
+// from the Kafka message bus.
 type AckSource struct {
 	Converter Converter
 
@@ -34,6 +43,7 @@ type AckSource struct {
 	errorsTotal     *prometheus.CounterVec
 }
 
+// AckSourceConfig represents the configuration of an AckSource object.
 type AckSourceConfig struct {
 	Addrs     []string
 	ClientID  string
@@ -41,6 +51,7 @@ type AckSourceConfig struct {
 	Topic     string
 }
 
+// NewAckSource creates an instance of AckSource.
 func NewAckSource(config *AckSourceConfig) (*AckSource, error) {
 	as := &AckSource{
 		Converter: config.Converter,
@@ -70,24 +81,34 @@ func NewAckSource(config *AckSourceConfig) (*AckSource, error) {
 	return as, nil
 }
 
-func (as AckSource) Describe(ch chan<- *prometheus.Desc) {
+// Describe implements prometheus.Collector.  Sends decriptors of the
+// instance's sourceDurations and errorsTotal to the parameter ch.
+func (as *AckSource) Describe(ch chan<- *prometheus.Desc) {
 	as.sourceDurations.Describe(ch)
 	as.errorsTotal.Describe(ch)
 }
 
-func (as AckSource) Collect(ch chan<- prometheus.Metric) {
+// Collect implements Collector.  Sends metrics collected by sourceDurations
+// and errorsTotal to the parameter ch.
+func (as *AckSource) Collect(ch chan<- prometheus.Metric) {
 	as.sourceDurations.Collect(ch)
 	as.errorsTotal.Collect(ch)
 }
 
+// Chan implements the bus.AckSource interface.  Returns the channel that feeds
+// the message payload.
 func (as *AckSource) Chan() <-chan bus.AckPayload {
 	return as.ch
 }
 
+// Err implements the bus.AckSource interface.  Caller must call Err after the
+// channel has been closed.  Will return the first error encountered.
 func (as *AckSource) Err() error {
 	return as.err
 }
 
+// Stop implements the bus.AckSource interface.  Closes the channel for payload
+// processing.
 func (as *AckSource) Stop() {
 	as.ctx.Cancel(nil)
 }
