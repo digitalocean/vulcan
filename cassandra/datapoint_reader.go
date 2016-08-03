@@ -10,17 +10,21 @@ import (
 
 const fetchUncompressedSQL = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at DESC`
 
-type datapointReader struct {
+// DatapointReader represents an object that queries on the target Cassandra
+// server and transforms the result to a Vulcan Datapoint.
+type DatapointReader struct {
 	sess *gocql.Session
 }
 
+// DatapointReaderConfig represents the configuration of a DatapointReader.
 type DatapointReaderConfig struct {
 	CassandraAddrs []string
 	Keyspace       string
 	Timeout        time.Duration
 }
 
-func NewDatapointReader(config *DatapointReaderConfig) (*datapointReader, error) {
+// NewDatapointReader creates a new instance of DatapointReader.
+func NewDatapointReader(config *DatapointReaderConfig) (*DatapointReader, error) {
 	cluster := gocql.NewCluster(config.CassandraAddrs...)
 	cluster.Keyspace = config.Keyspace
 	cluster.Timeout = config.Timeout
@@ -31,13 +35,14 @@ func NewDatapointReader(config *DatapointReaderConfig) (*datapointReader, error)
 	if err != nil {
 		return nil, err
 	}
-	sw := &datapointReader{
+	sw := &DatapointReader{
 		sess: sess,
 	}
 	return sw, nil
 }
 
-func (dpr *datapointReader) ReadDatapoints(fqmn string, after, before bus.Timestamp) ([]bus.Datapoint, error) {
+// ReadDatapoints implements storage.DatapointReader interface.
+func (dpr *DatapointReader) ReadDatapoints(fqmn string, after, before bus.Timestamp) ([]bus.Datapoint, error) {
 	query := dpr.sess.Query(fetchUncompressedSQL, fqmn, after, before)
 	iter := query.Iter()
 	var (
