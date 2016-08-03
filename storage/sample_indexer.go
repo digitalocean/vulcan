@@ -10,5 +10,7 @@ import (
 // Collector interface and IndexSample method.
 type SampleIndexer interface {
 	prometheus.Collector
+	// IndexSample takes in a sample from the message bus and makes indexing
+	// decisions on the target indexing system.
 	IndexSample(*bus.Sample) error
 }

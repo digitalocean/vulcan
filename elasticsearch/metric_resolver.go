@@ -3,34 +3,40 @@ package elasticsearch
 import (
 	"fmt"
 
-	"github.com/olivere/elastic"
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+
+	"github.com/olivere/elastic"
 )
 
-type metricResolver struct {
+// MetricResolver represents an object that makes queries against a target
+// ElasticSearch cluster and transforms the results to a Vulcan Metric type.
+type MetricResolver struct {
 	client *elastic.Client
 	index  string
 }
 
+// MetricResolverConfig represents the configuration of a MetricResolver.
 type MetricResolverConfig struct {
 	URL   string
 	Sniff bool
 	Index string
 }
 
-func NewMetricResolver(config *MetricResolverConfig) (*metricResolver, error) {
+// NewMetricResolver creates an instance of MetricResolver.
+func NewMetricResolver(config *MetricResolverConfig) (*MetricResolver, error) {
 	client, err := elastic.NewClient(elastic.SetURL(config.URL), elastic.SetSniff(config.Sniff))
 	if err != nil {
 		return nil, err
 	}
-	return &metricResolver{
+	return &MetricResolver{
 		client: client,
 		index:  config.Index,
 	}, nil
 }
 
-func (mr *metricResolver) Resolve(eq map[string]string) ([]*bus.Metric, error) {
+// Resolve implements the storage.MetricResolver interface.
+func (mr *MetricResolver) Resolve(eq map[string]string) ([]*bus.Metric, error) {
 	q := elastic.NewBoolQuery()
 	for k, v := range eq {
 		q.Filter(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(k)), v))
