@@ -90,3 +90,5 @@ import:
 - package: gopkg.in/fsnotify.v1
 - package: github.com/vaughan0/go-ini
 - package: github.com/dgrijalva/jwt-go
+- package: github.com/pkg/errors
+  version: ~0.7.0
