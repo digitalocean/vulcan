@@ -20,7 +20,9 @@ type workPayload struct {
 	wg *sync.WaitGroup
 }
 
-type ingester struct {
+// Ingester represents an object that consumes metrics from a bus and writes
+// them to a data storage.
+type Ingester struct {
 	prometheus.Collector
 
 	sampleWriter storage.SampleWriter
@@ -31,13 +33,17 @@ type ingester struct {
 	work              chan workPayload
 }
 
-type IngesterConfig struct {
+// Config represents the configuration of an Ingester.  It requires an
+// AckSource implementer for the target message bus and a SampleWriter
+// implementer of the data storage system.
+type Config struct {
 	SampleWriter storage.SampleWriter
 	AckSource    bus.AckSource
 }
 
-func NewIngester(config *IngesterConfig) *ingester {
-	i := &ingester{
+// NewIngester creates a new instance of Ingester.
+func NewIngester(config *Config) *Ingester {
+	i := &Ingester{
 		sampleWriter: config.SampleWriter,
 		ackSource:    config.AckSource,
 		ingesterDurations: prometheus.NewSummaryVec(
@@ -66,7 +72,7 @@ func NewIngester(config *IngesterConfig) *ingester {
 	return i
 }
 
-func (i *ingester) worker() {
+func (i *Ingester) worker() {
 	for w := range i.work {
 		t0 := time.Now()
 		err := i.sampleWriter.WriteSample(w.s)
@@ -80,17 +86,23 @@ func (i *ingester) worker() {
 	}
 }
 
-func (i ingester) Describe(ch chan<- *prometheus.Desc) {
+// Describe implements prometheus.Collector.  Sends decriptors of the
+// instance's ingesterDurations and errorsTotal to the parameter ch.
+func (i *Ingester) Describe(ch chan<- *prometheus.Desc) {
 	i.ingesterDurations.Describe(ch)
 	i.errorsTotal.Describe(ch)
 }
 
-func (i ingester) Collect(ch chan<- prometheus.Metric) {
+// Collect implements Collector.  Sends metrics collected by ingesterDurations
+// and errorsTotal to the parameter ch.
+func (i *Ingester) Collect(ch chan<- prometheus.Metric) {
 	i.ingesterDurations.Collect(ch)
 	i.errorsTotal.Collect(ch)
 }
 
-func (i *ingester) Run() error {
+// Run starts the ingesting process by consuming from the message bus and
+// writing to the data storage system.
+func (i *Ingester) Run() error {
 	log.Println("running...")
 	ch := i.ackSource.Chan()
 	for payload := range ch {
@@ -100,7 +112,7 @@ func (i *ingester) Run() error {
 	return i.ackSource.Err()
 }
 
-func (i *ingester) writeSampleGroup(sg bus.SampleGroup) {
+func (i *Ingester) writeSampleGroup(sg bus.SampleGroup) {
 	t0 := time.Now()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(sg))
