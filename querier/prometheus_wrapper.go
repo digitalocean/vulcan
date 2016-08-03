@@ -15,17 +15,17 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// PrometheusWrapper implements the prometheus storage interface and provides us a way
-// to query metrics from cassandra and feed those metrics into the prometheus
-// query evaluator for reads.
+// PrometheusWrapper implements the prometheus storage interface and provides us
+// a way to query metrics from cassandra and feed those metrics into the
+// prometheus query evaluator for reads.
 //
-// This is a hack to use the prometheus query evaluator. We should implement PromQL
-// in a better way that doesn't make assumptions about metrics being available
-// in-memory.
+// This is a hack to use the prometheus query evaluator. We should implement
+// PromQL in a better way that doesn't make assumptions about metrics being
+// available in-memory.
 type PrometheusWrapper struct {
 	prometheus.Collector
 
-	Preloader      *Preloader
+	Preloader      *preloader
 	DPReader       storage.DatapointReader
 	metricResolver storage.MetricResolver
 
@@ -33,19 +33,21 @@ type PrometheusWrapper struct {
 	matchesFound   prometheus.Summary
 }
 
-// Describe implements prometheus.Collector
+// Describe implements prometheus.Collector. Sends decriptors of the
+// instance's matchesFound and queryDurations to the parameter ch.
 func (pw *PrometheusWrapper) Describe(ch chan<- *prometheus.Desc) {
 	pw.matchesFound.Describe(ch)
 	pw.queryDurations.Describe(ch)
 }
 
-// Collect implements prometheus.Collector.
+// Collect implements prometheus.Collector.Sends metrics collected by the
+// instance's matchesFound and queryDurations to the parameter ch.
 func (pw *PrometheusWrapper) Collect(ch chan<- prometheus.Metric) {
 	pw.matchesFound.Collect(ch)
 	pw.queryDurations.Collect(ch)
 }
 
-type Preloader struct {
+type preloader struct {
 	DPReader storage.DatapointReader
 
 	fingerPrintLock sync.RWMutex
@@ -72,11 +74,14 @@ type SeriesIterator struct {
 	queryDurations *prometheus.SummaryVec
 }
 
+// PrometheusWrapperConfig represents the configuration of a
+// PrometheusWrapperConfig object.
 type PrometheusWrapperConfig struct {
 	DatapointReader storage.DatapointReader
 	MetricResolver  storage.MetricResolver
 }
 
+// NewPrometheusWrapper creates a new instance of PrometheusWrapper
 func NewPrometheusWrapper(config *PrometheusWrapperConfig) (pw *PrometheusWrapper, err error) {
 	pw = &PrometheusWrapper{
 		metricResolver: config.MetricResolver,
@@ -101,7 +106,7 @@ func NewPrometheusWrapper(config *PrometheusWrapperConfig) (pw *PrometheusWrappe
 			[]string{"stage"},
 		),
 	}
-	pw.Preloader = &Preloader{
+	pw.Preloader = &preloader{
 		DPReader:        config.DatapointReader,
 		fingerPrintLock: sync.RWMutex{},
 		HackFingerprint: map[model.Fingerprint]model.Metric{},
@@ -136,9 +141,9 @@ func (si *SeriesIterator) fetch() {
 	si.ready = true
 }
 
-// Gets the value that is closest before the given time. In case a value
-// exists at precisely the given time, that value is returned. If no
-// applicable value exists, ZeroSamplePair is returned.
+// ValueAtOrBeforeTime gets the value that is closest before the given time.
+// In case a value exists at precisely the given time, that value is returned.
+// If no applicable value exists, ZeroSamplePair is returned.
 func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	// log.Infof("ValueAtOrBeforeTime: %v", t)
 	si.fetch()
@@ -153,7 +158,7 @@ func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	return local.ZeroSamplePair
 }
 
-// Gets all values contained within a given interval.
+// RangeValues gets all values contained within a given interval.
 func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
 	si.fetch()
 	result := []model.SamplePair{}
@@ -169,7 +174,8 @@ func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
 	return result
 }
 
-func (p *Preloader) PreloadRange(fp model.Fingerprint, from, through model.Time) local.SeriesIterator {
+// PreloadRange implements a prometheus.Preloader.
+func (p *preloader) PreloadRange(fp model.Fingerprint, from, through model.Time) local.SeriesIterator {
 	promMetric := p.metricForFingerprint(fp)
 	kaiMetric := bus.Metric{Name: string(promMetric["__name__"]), Labels: map[string]string{}}
 	for k, v := range promMetric {
@@ -196,7 +202,8 @@ func (p *Preloader) PreloadRange(fp model.Fingerprint, from, through model.Time)
 	return si
 }
 
-func (p *Preloader) PreloadInstant(fp model.Fingerprint, timestamp model.Time, stalenessDelta time.Duration) local.SeriesIterator {
+// PreloadInstant implements a prometheus.Preloader.
+func (p *preloader) PreloadInstant(fp model.Fingerprint, timestamp model.Time, stalenessDelta time.Duration) local.SeriesIterator {
 	promMetric := p.metricForFingerprint(fp)
 	kaiMetric := bus.Metric{Name: string(promMetric["__name__"]), Labels: map[string]string{}}
 	for k, v := range promMetric {
@@ -215,14 +222,14 @@ func (p *Preloader) PreloadInstant(fp model.Fingerprint, timestamp model.Time, s
 	}
 }
 
-func (p *Preloader) metricForFingerprint(fp model.Fingerprint) model.Metric {
+func (p *preloader) metricForFingerprint(fp model.Fingerprint) model.Metric {
 	p.fingerPrintLock.RLock()
 	defer p.fingerPrintLock.RUnlock()
 	return p.HackFingerprint[fp]
 }
 
 // Close is a no-op but necessary to fulfil the prometheus storage interface
-func (p *Preloader) Close() {}
+func (p *preloader) Close() {}
 
 // Append is a no-op but necessary to fulfil the prometheus storage interface
 func (pw *PrometheusWrapper) Append(sample *model.Sample) error {
@@ -234,6 +241,7 @@ func (pw *PrometheusWrapper) NeedsThrottling() bool {
 	return false
 }
 
+// NewPreloader implements prometheus.Querier interface.
 func (pw *PrometheusWrapper) NewPreloader() local.Preloader {
 	return pw.Preloader
 }
@@ -281,19 +289,24 @@ func (pw *PrometheusWrapper) MetricsForLabelMatchers(from, through model.Time, m
 	return result
 }
 
+// LastSampleForFingerprint Implements prometheus.Querier interface.  Returns
+// the last sample for the provided fingerprint.
 func (pw *PrometheusWrapper) LastSampleForFingerprint(model.Fingerprint) model.Sample {
 	return model.Sample{}
 }
+
+// LabelValuesForLabelName Implements prometheus.Querier interface.
 func (pw *PrometheusWrapper) LabelValuesForLabelName(model.LabelName) model.LabelValues {
 	return nil
 }
 
-// Drop all time series associated with the given fingerprints.
+// DropMetricsForFingerprints drops all time series associated with the given
+// fingerprints.
 func (pw *PrometheusWrapper) DropMetricsForFingerprints(...model.Fingerprint) {
 	return
 }
 
-// Run the various maintenance loops in goroutines. Returns when the
+// Start runs the various maintenance loops in goroutines. Returns when the
 // storage is ready to use. Keeps everything running in the background
 // until Stop is called.
 func (pw *PrometheusWrapper) Start() error {
