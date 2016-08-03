@@ -55,7 +55,7 @@ var Ingester = &cobra.Command{
 		prometheus.MustRegister(source)
 
 		// create and start ingester
-		i := ingester.NewIngester(&ingester.IngesterConfig{
+		i := ingester.NewIngester(&ingester.Config{
 			SampleWriter: sw,
 			AckSource:    source,
 		})
