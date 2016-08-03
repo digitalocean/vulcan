@@ -14,7 +14,9 @@ import (
 	"github.com/prometheus/prometheus/web"
 )
 
-type querier struct {
+// Querier serves as the layer that layer takes incoming user queries
+// and returns the results fetched from the storage system.
+type Querier struct {
 	prometheus.Collector
 
 	dpr storage.DatapointReader
@@ -23,13 +25,15 @@ type querier struct {
 	queryDurations *prometheus.SummaryVec
 }
 
-type QuerierConfig struct {
+// Config represents the configuration of a Querier object.
+type Config struct {
 	DatapointReader storage.DatapointReader
 	MetricResolver  storage.MetricResolver
 }
 
-func NewQuerier(config *QuerierConfig) *querier {
-	return &querier{
+// NewQuerier returns creates a new instance of Querier.
+func NewQuerier(config *Config) *Querier {
+	return &Querier{
 		queryDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace: "vulcan",
@@ -44,15 +48,20 @@ func NewQuerier(config *QuerierConfig) *querier {
 	}
 }
 
-func (q querier) Describe(ch chan<- *prometheus.Desc) {
+// Describe implements prometheus.Collector.  Sends decriptors of the
+// instance's queryDurations to the parameter ch.
+func (q *Querier) Describe(ch chan<- *prometheus.Desc) {
 	q.queryDurations.Describe(ch)
 }
 
-func (q querier) Collect(ch chan<- prometheus.Metric) {
+// Collect implements Collector.  Sends metrics collected by queryDurations
+// to the parameter ch.
+func (q *Querier) Collect(ch chan<- prometheus.Metric) {
 	q.queryDurations.Collect(ch)
 }
 
-func (q querier) Run() error {
+// Run starts the Querir HTTP service.
+func (q *Querier) Run() error {
 	ps, err := NewPrometheusWrapper(&PrometheusWrapperConfig{
 		DatapointReader: q.dpr,
 		MetricResolver:  q.mr,

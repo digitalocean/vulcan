@@ -38,7 +38,7 @@ var Querier = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		q := querier.NewQuerier(&querier.QuerierConfig{
+		q := querier.NewQuerier(&querier.Config{
 			DatapointReader: dpr,
 			MetricResolver:  mr,
 		})
