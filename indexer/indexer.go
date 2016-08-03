@@ -20,7 +20,9 @@ type workPayload struct {
 	wg *sync.WaitGroup
 }
 
-type indexer struct {
+// Indexer represents an object that consumes metrics from a message bus and
+// writes them to indexing system.
+type Indexer struct {
 	prometheus.Collector
 	Source        bus.AckSource
 	SampleIndexer storage.SampleIndexer
@@ -30,13 +32,17 @@ type indexer struct {
 	work           chan workPayload
 }
 
-type IndexerConfig struct {
+// Config represents the configuration of an Indexer.  It takes an implmenter
+// Acksource of the target message bus and an implmenter of SampleIndexer of
+// the target indexing system.
+type Config struct {
 	Source        bus.AckSource
 	SampleIndexer storage.SampleIndexer
 }
 
-func NewIndexer(config *IndexerConfig) *indexer {
-	i := &indexer{
+// NewIndexer creates a new instance of an Indexer.
+func NewIndexer(config *Config) *Indexer {
+	i := &Indexer{
 		Source:        config.Source,
 		SampleIndexer: config.SampleIndexer,
 
@@ -66,19 +72,25 @@ func NewIndexer(config *IndexerConfig) *indexer {
 	return i
 }
 
-func (i indexer) Describe(ch chan<- *prometheus.Desc) {
+// Describe implements prometheus.Collector.  Sends decriptors of the
+// instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
+func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
 	i.indexDurations.Describe(ch)
 	i.errorsTotal.Describe(ch)
 	i.SampleIndexer.Describe(ch)
 }
 
-func (i indexer) Collect(ch chan<- prometheus.Metric) {
+// Collect implements prometheus.Collector.  Sends metrics collected by the
+// instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
+func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
 	i.indexDurations.Collect(ch)
 	i.errorsTotal.Collect(ch)
 	i.SampleIndexer.Collect(ch)
 }
 
-func (i *indexer) Run() error {
+// Run starts the indexer process of consuming from the bus and indexing to
+// the target indexing system.
+func (i *Indexer) Run() error {
 	ch := i.Source.Chan()
 	for payload := range ch {
 		i.indexSampleGroup(payload.SampleGroup)
@@ -87,7 +99,7 @@ func (i *indexer) Run() error {
 	return i.Source.Err()
 }
 
-func (i *indexer) indexSampleGroup(sg bus.SampleGroup) {
+func (i *Indexer) indexSampleGroup(sg bus.SampleGroup) {
 	t0 := time.Now()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(sg))
@@ -101,7 +113,7 @@ func (i *indexer) indexSampleGroup(sg bus.SampleGroup) {
 	i.indexDurations.WithLabelValues("index_sample_group").Observe(float64(time.Since(t0).Nanoseconds()))
 }
 
-func (i *indexer) worker() {
+func (i *Indexer) worker() {
 	for w := range i.work {
 		t0 := time.Now()
 		err := i.SampleIndexer.IndexSample(w.s)

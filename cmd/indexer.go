@@ -63,7 +63,7 @@ func Indexer() *cobra.Command {
 			})
 
 			// create indexer and run
-			i := indexer.NewIndexer(&indexer.IndexerConfig{
+			i := indexer.NewIndexer(&indexer.Config{
 				SampleIndexer: sampleIndexer,
 				Source:        source,
 			})
