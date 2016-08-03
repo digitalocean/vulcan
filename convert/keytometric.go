@@ -6,6 +6,7 @@ import (
 	"github.com/digitalocean/vulcan/bus"
 )
 
+// KeyToMetric produces a Vulcan metric for a consistent key.
 func KeyToMetric(key string) (*bus.Metric, error) {
 	m := &bus.Metric{
 		Labels: map[string]string{},
