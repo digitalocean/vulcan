@@ -5,9 +5,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/digitalocean/vulcan/bus"
+
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/digitalocean/vulcan/bus"
 )
 
 // PromTextToSG reads prometheus metrics in text exposition format and
