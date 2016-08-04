@@ -12,3 +12,14 @@ type Target interface {
 	Fetch() ([]*dto.MetricFamily, error)
 	Interval() time.Duration
 }
+
+type target struct {
+	Job      string
+	URL      string
+	Instance string
+	Interval time.Duration
+}
+
+func (t *target) key() string {
+	return t.Job + t.URL
+}
