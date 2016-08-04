@@ -7,6 +7,8 @@ import (
 	"github.com/gocql/gocql"
 )
 
+// SetupTables sets up the provided keyspace and creates table `uncompressed`
+// on the provided Cassandra hosts.
 func SetupTables(hosts []string, keyspace string) error {
 	first := gocql.NewCluster(hosts...)
 	firstSess, err := first.CreateSession()
@@ -21,7 +23,7 @@ func SetupTables(hosts []string, keyspace string) error {
 	keyspaceCQL := fmt.Sprintf(`CREATE KEYSPACE IF NOT EXISTS %s
 WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}
 AND durable_writes = true;`, keyspace)
-	tableCQL := `CREATE TABLE IF NOT EXISTS uncompressed 
+	tableCQL := `CREATE TABLE IF NOT EXISTS uncompressed
 (
   fqmn  text,
   at    bigint,

@@ -20,17 +20,21 @@ const (
 	writeSampleCQL = `UPDATE uncompressed SET value = ? WHERE fqmn = ? AND at = ?`
 )
 
-type sampleWriter struct {
+// SampleWriter represents an object that writes bus messages to the target
+// Cassandra database.
+type SampleWriter struct {
 	sess *gocql.Session
 }
 
+// SampleWriterConfig represents the configuration of a SampleWriter.
 type SampleWriterConfig struct {
 	CassandraAddrs []string
 	Keyspace       string
 	Timeout        time.Duration
 }
 
-func NewSampleWriter(config *SampleWriterConfig) (*sampleWriter, error) {
+// NewSampleWriter creates a new instance of SampleWriter.
+func NewSampleWriter(config *SampleWriterConfig) (*SampleWriter, error) {
 	cluster := gocql.NewCluster(config.CassandraAddrs...)
 	cluster.Keyspace = config.Keyspace
 	cluster.Timeout = config.Timeout
@@ -41,13 +45,14 @@ func NewSampleWriter(config *SampleWriterConfig) (*sampleWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	sw := &sampleWriter{
+	sw := &SampleWriter{
 		sess: sess,
 	}
 	return sw, nil
 }
 
-func (sw *sampleWriter) WriteSample(s *bus.Sample) error {
+// WriteSample implements the storage.WriteSample interface.
+func (sw *SampleWriter) WriteSample(s *bus.Sample) error {
 	key, err := convert.MetricToKey(s.Metric)
 	if err != nil {
 		return err
