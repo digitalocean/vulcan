@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/digitalocean/vulcan/config"
-
 	"github.com/golang/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -60,7 +58,7 @@ func (ht *HTTPTarget) Interval() time.Duration {
 	return ht.i
 }
 
-func annotate(fams []*dto.MetricFamily, target config.Target) {
+func annotate(fams []*dto.MetricFamily, target target) {
 	for _, f := range fams {
 		for _, m := range f.Metric {
 			m.Label = append(m.Label, &dto.LabelPair{
