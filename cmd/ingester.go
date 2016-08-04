@@ -5,17 +5,20 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/ingester"
 	"github.com/digitalocean/vulcan/kafka"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
+// Ingester handles parsing the command line options, initializes, and starts the
+// ingester service accordingling.  It is the entry point for the Ingester
+// service.
 var Ingester = &cobra.Command{
 	Use:   "ingester",
 	Short: "runs the ingester service to consume metrics from kafka into cassandra",

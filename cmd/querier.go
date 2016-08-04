@@ -7,11 +7,15 @@ import (
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/elasticsearch"
 	"github.com/digitalocean/vulcan/querier"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
+// Querier handles parsing the command line options, initializes and starts the
+// querier service accordingling.  It is the entry point for the Querier
+// service.
 var Querier = &cobra.Command{
 	Use:   "querier",
 	Short: "runs the query service that implements PromQL and prometheus v1 api",
