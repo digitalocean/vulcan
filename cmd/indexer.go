@@ -18,6 +18,9 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Indexer handles parsing the command line options, initializes, and starts the
+// indexer service accordingling.  It is the entry point for the Indexer
+// service.
 func Indexer() *cobra.Command {
 	var Indexer = &cobra.Command{
 		Use:   "indexer",

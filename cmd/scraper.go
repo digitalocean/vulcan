@@ -5,19 +5,22 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/samuel/go-zookeeper/zk"
-	"github.com/satori/go.uuid"
-
 	"github.com/digitalocean/vulcan/kafka"
 	"github.com/digitalocean/vulcan/scraper"
 	"github.com/digitalocean/vulcan/zookeeper"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/samuel/go-zookeeper/zk"
+	"github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
+// Scraper handles parsing the command line options, initializes, and starts the
+// scraper service accordingling.  It is the entry point for the scraper
+// service.
 var Scraper = &cobra.Command{
 	Use:   "scraper",
 	Short: "runs a scraper agent to collect metrics into kafka",

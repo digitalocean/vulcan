@@ -8,13 +8,14 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
+// Job handles parsing the command line options, initializes, and starts the
+// job ingestion process accordingling.
 var Job = &cobra.Command{
 	Use:   "job",
 	Short: "job places the provided stdin config on the zookeeper server as a configured job",
