@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -e
+
+declare -a pids
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+_term() {
+  for pid in $pids; do
+    kill -TERM "$pid" 2>/dev/null
+  done
+}
+
+trap _term SIGTERM
+
+# start grafana's default run script in the background
+/run.sh &
+pids+=($!)
+
+# wait for grafana to be available (exit with failure on timeout)
+/container/wait-for-it/wait-for-it.sh localhost:3000
+
+# ensure that datasource exists (500 error when already existing)
+curl -H "Content-Type: application/json" -X POST --data @"$DIR/datasource.json" http://admin:admin@localhost:3000/api/datasources
+
+for pid in $pids; do
+  wait "$pid"
+done
