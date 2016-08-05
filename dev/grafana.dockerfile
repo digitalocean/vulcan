@@ -5,7 +5,3 @@ RUN apt-get update \
  && apt-get clean \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
-
-# COPY ./grafana /usr/local/grafana
-
-ENTRYPOINT ['/usr/local/grafana/run']
