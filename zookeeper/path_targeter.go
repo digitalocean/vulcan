@@ -12,7 +12,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval/discovery/dns"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -120,8 +119,7 @@ func (pt *PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 		}
 		jobs = append(jobs, j)
 
-		dns.NewDiscovery(c.ScrapeConfigs[0].DNSSDConfigs[0])
-
+		// TODO handle other types of scrape configs (e.g. DNS and Kubernetes)
 	}
 	return jobs, nil
 }
