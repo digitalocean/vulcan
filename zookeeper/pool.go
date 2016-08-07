@@ -13,7 +13,7 @@ import (
 // zookeeper for changes in the list of active scrapers.
 type Pool struct {
 	id   string
-	conn *zk.Conn
+	conn Client
 	path string
 	pool string
 	done chan struct{}
@@ -38,7 +38,7 @@ func NewPool(config *PoolConfig) (*Pool, error) {
 // PoolConfig represents the configuration of a Pool object.
 type PoolConfig struct {
 	ID   string
-	Conn *zk.Conn
+	Conn Client
 	Root string
 	Pool string
 }

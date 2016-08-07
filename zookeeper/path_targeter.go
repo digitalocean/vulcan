@@ -12,13 +12,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
-	"github.com/samuel/go-zookeeper/zk"
 )
 
 // PathTargeter represents an object that connects to Zookeeper and queries
-// a zk path for Vulcan scrape configurations.
+// a zk path for Vulcan scrape configurations for a specific zk path.
 type PathTargeter struct {
-	conn *zk.Conn
+	conn Client
 	path string
 
 	done chan struct{}
@@ -28,7 +27,7 @@ type PathTargeter struct {
 
 // PathTargeterConfig represents the configuration of a PathTargeter.
 type PathTargeterConfig struct {
-	Conn *zk.Conn
+	Conn Client
 	Path string
 }
 
@@ -122,6 +121,28 @@ func (pt *PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 		// TODO handle other types of scrape configs (e.g. DNS and Kubernetes)
 	}
 	return jobs, nil
+}
+
+func (pt *PathTargeter) initTarget(
+	l model.LabelSet,
+	sc pconfig.ScrapeConfig,
+	j *scraper.Job,
+) error {
+	inst := string(l[model.LabelName("__address__")])
+	u, err := url.Parse(fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath))
+	if err != nil {
+		return errors.Wrapf(
+			err,
+			"could not parse for instance %s",
+			l[model.LabelName("__address__")],
+		)
+	}
+	j.Targets[scraper.Instance(inst)] = scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+		Interval: time.Duration(sc.ScrapeInterval),
+		URL:      *u,
+	})
+
+	return nil
 }
 
 func (pt *PathTargeter) stop() {
