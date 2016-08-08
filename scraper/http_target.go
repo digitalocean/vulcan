@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,12 +16,14 @@ import (
 type HTTPTarget struct {
 	u url.URL
 	i time.Duration
+	j JobName
 }
 
 // HTTPTargetConfig represents the configuration of an HTTPTarget.
 type HTTPTargetConfig struct {
 	Interval time.Duration
 	URL      url.URL
+	JobName  JobName
 }
 
 // NewHTTPTarget creates an instance of HTTPTarget.
@@ -28,12 +31,13 @@ func NewHTTPTarget(config *HTTPTargetConfig) *HTTPTarget {
 	return &HTTPTarget{
 		u: config.URL,
 		i: config.Interval,
+		j: config.JobName,
 	}
 }
 
 // Equals checkfs if the instance's current target is the same as the
 // parameter other.
-func (ht *HTTPTarget) Equals(other Target) bool {
+func (ht *HTTPTarget) Equals(other Targeter) bool {
 	ot, ok := other.(*HTTPTarget)
 	if !ok {
 		return false
@@ -58,7 +62,12 @@ func (ht *HTTPTarget) Interval() time.Duration {
 	return ht.i
 }
 
-func annotate(fams []*dto.MetricFamily, target target) {
+// Key implements Targeter
+func (ht *HTTPTarget) Key() string {
+	return fmt.Sprintf("%s-%s", ht.j, ht.u)
+}
+
+func annotate(fams []*dto.MetricFamily, target Target) {
 	for _, f := range fams {
 		for _, m := range f.Metric {
 			m.Label = append(m.Label, &dto.LabelPair{
@@ -79,7 +88,7 @@ func (ht HTTPTarget) fetch() ([]*dto.MetricFamily, error) {
 		return []*dto.MetricFamily{}, err
 	}
 	defer resp.Body.Close()
-	// todo check return codes
+	// TODO check return codes
 	return parse(resp.Body, resp.Header)
 }
 
@@ -89,15 +98,17 @@ func parse(in io.Reader, header http.Header) ([]*dto.MetricFamily, error) {
 	var err error
 	for {
 		var f dto.MetricFamily
-		err = dec.Decode(&f)
-		if err != nil {
+		if err = dec.Decode(&f); err != nil {
 			break
 		}
+
 		fams = append(fams, &f)
 	}
+
 	if err == io.EOF {
 		err = nil
 	}
+
 	return fams, err
 }
 

@@ -21,7 +21,7 @@ type PathTargeter struct {
 	path string
 
 	done chan struct{}
-	out  chan scraper.Job
+	out  chan []scraper.Job
 	once sync.Once
 }
 
@@ -38,49 +38,62 @@ func NewPathTargeter(config *PathTargeterConfig) *PathTargeter {
 		path: config.Path,
 
 		done: make(chan struct{}),
-		out:  make(chan scraper.Job),
+		out:  make(chan []scraper.Job),
 	}
 	go pt.run()
 	return pt
 }
 
-// Targets implements scraper.Targeter interface.
+// Jobs implements scraper.JobWatcher interface.
 // Returns a channel that feeds available jobs.
-func (pt *PathTargeter) Targets() <-chan scraper.Job {
+func (pt *PathTargeter) Jobs() <-chan []scraper.Job {
 	return pt.out
 }
 
 func (pt *PathTargeter) run() {
 	defer close(pt.out)
+
+	ll := log.WithFields(log.Fields{
+		"path_targeter": "run",
+		"path":          pt.path,
+	})
+
 	for {
-		// escape
+		// escape the continue in the below if block
 		select {
 		case <-pt.done:
 			return
+
 		default:
 		}
 
-		log.WithField("path", pt.path).Info("getting value")
+		ll.Info("getting value")
 		b, _, ech, err := pt.conn.GetW(pt.path)
 		if err != nil {
-			log.WithError(err).Error("while getting path")
+			ll.WithError(err).Error("while getting path")
 			time.Sleep(time.Second * 2) // TODO exponential backoff
 			continue
 		}
+		ll.Infof("got value:%q", string(b))
+
 		jobs, err := pt.parseJobs(b)
 		if err != nil {
-			log.WithError(err).Error("while parsing value")
+			ll.WithError(err).Error("while parsing value")
 			time.Sleep(time.Second * 2) // TODO exponential backoff
 			continue
 		}
-		for _, j := range jobs {
-			pt.out <- j
-		}
 
-		// block
 		select {
 		case <-pt.done:
 			return
+
+		case pt.out <- jobs:
+		}
+
+		select {
+		case <-pt.done:
+			return
+
 		case <-ech:
 		}
 	}
@@ -98,51 +111,43 @@ func (pt *PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
 	}
 
 	for _, sc := range c.ScrapeConfigs {
-		j := scraper.Job{
-			JobName: scraper.JobName(sc.JobName),
-			Targets: map[scraper.Instance]scraper.Target{},
-		}
-		for _, tg := range sc.StaticConfigs {
-			for _, t := range tg.Targets {
-				inst := string(t[model.LabelName("__address__")])
-				u, err := url.Parse(fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath))
-				if err != nil {
-					log.WithError(err).Error("could not parse instance")
-					continue
-				}
-				j.Targets[scraper.Instance(inst)] = scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
-					Interval: time.Duration(sc.ScrapeInterval),
-					URL:      *u,
-				})
-			}
-		}
-		jobs = append(jobs, j)
-
+		sj := pt.staticJobs(sc)
+		log.WithField("path", pt.path).Debugf("parsed static jobs: %v", sj)
 		// TODO handle other types of scrape configs (e.g. DNS and Kubernetes)
+		jobs = append(jobs, sj)
 	}
 	return jobs, nil
 }
 
-func (pt *PathTargeter) initTarget(
-	l model.LabelSet,
-	sc pconfig.ScrapeConfig,
-	j *scraper.Job,
-) error {
-	inst := string(l[model.LabelName("__address__")])
-	u, err := url.Parse(fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath))
-	if err != nil {
-		return errors.Wrapf(
-			err,
-			"could not parse for instance %s",
-			l[model.LabelName("__address__")],
-		)
-	}
-	j.Targets[scraper.Instance(inst)] = scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
-		Interval: time.Duration(sc.ScrapeInterval),
-		URL:      *u,
+func (pt *PathTargeter) staticJobs(sc *pconfig.ScrapeConfig) scraper.Job {
+	j := scraper.NewStaticJob(&scraper.StaticJobConfig{
+		JobName:   scraper.JobName(sc.JobName),
+		Targeters: []scraper.Targeter{},
 	})
 
-	return nil
+	for _, tg := range sc.StaticConfigs {
+
+		for _, t := range tg.Targets {
+			inst := string(t[model.LabelName("__address__")])
+
+			u, err := url.Parse(
+				fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath),
+			)
+			if err != nil {
+				log.WithError(err).Error("could not parse instance")
+				continue
+			}
+
+			j.AddTargets(scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+				Interval: time.Duration(sc.ScrapeInterval),
+				URL:      *u,
+				JobName:  scraper.JobName(sc.JobName),
+			}))
+		}
+
+	}
+
+	return j
 }
 
 func (pt *PathTargeter) stop() {

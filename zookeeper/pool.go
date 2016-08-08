@@ -44,7 +44,7 @@ type PoolConfig struct {
 func (p *Pool) run() {
 	defer close(p.out)
 	mypath := path.Join(p.path, p.id)
-	mylog := log.WithFields(log.Fields{
+	ll := log.WithFields(log.Fields{
 		"path": p.path,
 		"id":   p.id,
 	})
@@ -56,52 +56,66 @@ func (p *Pool) run() {
 		log.WithFields(log.Fields{
 			"path": acc,
 		}).Debug("ensuring path exists")
+
 		exists, _, err := p.conn.Exists(acc)
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		if exists {
 			log.WithFields(log.Fields{
 				"path": acc,
 			}).Debug("path already exists")
 			continue
 		}
+
 		_, err = p.conn.Create(acc, []byte{}, 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-	mylog.Info("registering self in zookeeper")
-	_, err := p.conn.Create(mypath, []byte{}, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
-	if err != nil {
-		mylog.WithError(err).Error("could not register self in pool")
+
+	ll.Info("registering self in zookeeper")
+	if _, err := p.conn.Create(
+		mypath,
+		[]byte{},
+		zk.FlagEphemeral,
+		zk.WorldACL(zk.PermAll),
+	); err != nil {
+		ll.WithError(err).Error("could not register self in pool")
 		return
 	}
+
 	for {
-		// escape
 		select {
 		case <-p.done:
 			return
+
 		default:
 		}
 
 		ch, _, ech, err := p.conn.ChildrenW(p.path)
 		if err != nil {
-			mylog.WithError(err).Error("error while getting active scraper list from zookeeper")
+			ll.WithError(err).Error("error while getting active scraper list from zookeeper")
 			time.Sleep(time.Second * 2) // TODO backoff and report error
 			continue
 		}
-		mylog.WithFields(log.Fields{
+		ll.WithFields(log.Fields{
 			"scrapers":     ch,
 			"num_scrapers": len(ch),
 		}).Info("got list of scrapers from zookeeper")
 
-		p.out <- ch
-
-		// block
 		select {
 		case <-p.done:
 			return
+
+		case p.out <- ch:
+		}
+
+		select {
+		case <-p.done:
+			return
+
 		case <-ech:
 		}
 	}

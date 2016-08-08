@@ -2,6 +2,7 @@ package zookeeper
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,22 +73,23 @@ scrape_configs:
 	for i, test := range runValidations {
 		t.Logf("run validations %d: %q", i, test.desc)
 
+		testPath := "/vulcan/test/"
 		c := NewZKConn()
-		c.EventChannel = make(chan zk.Event)
-		c.Jobs = test.jobs
+		c.GetEventChannel = make(chan zk.Event)
+		c.Jobs = map[string]string{testPath: test.jobs}
 
 		pt := &PathTargeter{
 			conn: c.Mock,
-			path: "/vulcan/test/",
+			path: testPath,
 			done: make(chan struct{}),
-			out:  make(chan scraper.Job),
+			out:  make(chan []scraper.Job),
 		}
 
 		testCh := make(chan struct{})
 
 		go func() {
 			go func() {
-				for _ = range pt.Targets() {
+				for _ = range pt.Jobs() {
 				}
 			}()
 
@@ -96,7 +98,7 @@ scrape_configs:
 		}()
 
 		if test.eventDelay > 0 {
-			c.SendEvent(time.Duration(test.eventDelay) * time.Second)
+			c.SendGetEvent(time.Duration(test.eventDelay)*time.Second, testPath)
 		}
 
 		go func() {
@@ -128,7 +130,7 @@ func TestParseJobs(t *testing.T) {
 			param: `
   scrape_configs:
     -
-      job_name: haproxy_stats
+      job_name: static_configs
       metrics_path: /metrics
       static_configs:
         - targets:
@@ -142,7 +144,7 @@ func TestParseJobs(t *testing.T) {
 			param: `
   scrape_configs:
     -
-      job_name: haproxy_stats
+      job_name: static_configs
       metrics_path: /metrics
       static_configs:
         - targets:
@@ -152,7 +154,7 @@ func TestParseJobs(t *testing.T) {
           - net.droplet.org:8080
           - cool.storage.io:8888
   `,
-			jobsByName: []string{"haproxy_stats"},
+			jobsByName: []string{"static_configs"},
 			targetsByName: []string{"localhost:9101", "localhost:9102",
 				"www.sammy.com:9101", "net.droplet.org:8080", "cool.storage.io:8888"},
 		},
@@ -187,13 +189,20 @@ func TestParseJobs(t *testing.T) {
 		}
 
 		for _, job := range jobs {
-			for _, target := range test.targetsByName {
-				if _, ok := job.Targets[scraper.Instance(target)]; !ok {
+
+			for _, expectedTarget := range test.targetsByName {
+				var found bool
+				for _, gotTarget := range job.GetTargets() {
+					if strings.Contains(gotTarget.Key(), expectedTarget) {
+						found = true
+					}
+				}
+				if !found {
 					t.Errorf(
 						"parseJobs(%s) => jobs -> %v; expected target for %s",
 						test.param,
-						job.Targets,
-						target,
+						job.GetTargets(),
+						expectedTarget,
 					)
 				}
 			}

@@ -87,10 +87,7 @@ func Scraper() *cobra.Command {
 				http.ListenAndServe(":8080", nil)
 			}()
 			log.Info("running...")
-			err = s.Run()
-			if err != nil {
-				return err
-			}
+			s.Run()
 
 			return nil
 		},

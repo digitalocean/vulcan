@@ -6,16 +6,16 @@ import (
 )
 
 type mockTargeter struct {
-	out chan Job
+	out chan []Targeter
 }
 
 func newMockTargeter() *mockTargeter {
 	return &mockTargeter{
-		out: make(chan Job),
+		out: make(chan []Targeter),
 	}
 }
 
-func (mt mockTargeter) Targets() <-chan Job {
+func (mt mockTargeter) Targets() <-chan []Targeter {
 	return mt.out
 }
 
@@ -34,7 +34,7 @@ func (mp mockPool) Scrapers() <-chan []string {
 }
 
 func TestConsistentHashTargeter(t *testing.T) {
-	mt := newMockTargeter()
+	mt := NewMockTargetWatcher()
 	mp := newMockPool()
 	cht := NewConsistentHashTargeter(&ConsistentHashTargeterConfig{
 		ID:       "abcd",
@@ -43,10 +43,9 @@ func TestConsistentHashTargeter(t *testing.T) {
 	})
 	go func() {
 		mp.out <- []string{"1234", "abcd"}
-		mt.out <- Job{
-			JobName: "test",
-			Targets: map[Instance]Target{
-				"test-1": &HTTPTarget{},
+		mt.out <- []Targeter{
+			&HTTPTarget{
+				j: JobName("test"),
 			},
 		}
 	}()
