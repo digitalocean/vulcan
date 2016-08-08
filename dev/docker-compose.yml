@@ -1,0 +1,77 @@
+---
+version: '2'
+services:  
+  zookeeper:
+    image: jplock/zookeeper:3.4.8
+
+  kafka:
+    image: ches/kafka:0.10.0.0
+    links:
+    - zookeeper:zookeeper
+    environment:
+      ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+
+  cassandra:
+    image: cassandra:2.2.7
+
+  elasticsearch:
+    image: elasticsearch:2.3.4
+
+  node_exporter:
+    image: prom/node-exporter:0.12.0
+    command:
+      - -collectors.enabled=diskstats,filesystem,loadavg,meminfo,netdev,stat,time,uname   
+
+  scraper:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    command: ['scraper']
+    links:
+    - node_exporter:node_exporter
+    - kafka:kafka
+    - zookeeper:zookeeper
+    environment:
+      VULCAN_ZK_SERVERS: zookeeper:2181
+      VULCAN_KAFKA_ADDRS: kafka:9092
+
+  indexer:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    command: ['indexer']
+    links:
+    - node_exporter:node_exporter
+    - kafka:kafka
+    - zookeeper:zookeeper
+    environment:
+      VULCAN_KAFKA_ADDRS: kafka:9092
+      VULCAN_ES: http://elasticsearch:9200/
+      VULCAN_ES_SNIFF: 'false'
+
+  ingester:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    command: ['ingester']
+    links:
+    - node_exporter:node_exporter
+    - kafka:kafka
+    - zookeeper:zookeeper
+    environment:
+      VULCAN_CASSANDRA_ADDRS: cassandra
+      VULCAN_KAFKA_ADDRS: kafka:9092
+
+  querier:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    command: ['querier']
+    links:
+    - node_exporter:node_exporter
+    - kafka:kafka
+    - zookeeper:zookeeper
+    environment:
+      VULCAN_CASSANDRA_ADDRS: cassandra
+      VULCAN_ES: http://elasticsearch:9200/
+      VULCAN_ES_SNIFF: 'false'
