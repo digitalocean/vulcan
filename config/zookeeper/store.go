@@ -5,22 +5,14 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/zookeeper"
 	"github.com/samuel/go-zookeeper/zk"
 )
-
-type zookeeper interface {
-	Children(path string) ([]string, *zk.Stat, error)
-	Create(path string, data []byte, flags int32, acl []zk.ACL) (string, error)
-	Delete(path string, version int32) error
-	Exists(path string) (bool, *zk.Stat, error)
-	Get(path string) ([]byte, *zk.Stat, error)
-	Set(path string, data []byte, version int32) (*zk.Stat, error)
-}
 
 // Store is implemented on top of Zookeeper
 type Store struct {
 	cluster string
-	client  zookeeper
+	client  zookeeper.Client
 	root    string
 }
 
@@ -28,7 +20,7 @@ type Store struct {
 // at the right data in zookeeper.
 type Config struct {
 	Cluster string
-	Client  zookeeper
+	Client  zookeeper.Client
 	Root    string
 }
 
