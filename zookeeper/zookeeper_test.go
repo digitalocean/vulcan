@@ -20,7 +20,7 @@ type ZKConn struct {
 	GetErr       error
 	ChildrenWErr error
 	CreateErr    error
-	Children     []string
+	MockChildren []string
 	Jobs         string
 }
 
@@ -37,7 +37,7 @@ func (c *ZKConn) ChildrenW(path string) ([]string, *zk.Stat, <-chan zk.Event, er
 	if c.ChildrenWErr != nil {
 		return nil, nil, nil, c.ChildrenWErr
 	}
-	return c.Children, c.Stat, c.EventChannel, c.ChildrenWErr
+	return c.MockChildren, c.Stat, c.EventChannel, c.ChildrenWErr
 }
 
 // Create is a stubbed version of zk.Create.

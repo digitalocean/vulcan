@@ -31,7 +31,7 @@ func main() {
 	vulcan.AddCommand(cmd.Querier)
 	vulcan.AddCommand(cmd.Scraper)
 
-	vulcan.AddCommand(cmd.Job)
+	vulcan.AddCommand(cmd.Job())
 	vulcan.AddCommand(cmd.Version(hash, version))
 
 	if err := vulcan.Execute(); err != nil {
