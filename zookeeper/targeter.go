@@ -8,13 +8,12 @@ import (
 	"github.com/digitalocean/vulcan/scraper"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/samuel/go-zookeeper/zk"
 )
 
 // Targeter uses zookeeper as a backend for configuring jobs that vulcan should scrape.
 // The targeter watches the zookeeper path to react to new/changed/removed jobs.
 type Targeter struct {
-	conn *zk.Conn
+	conn Client
 	path string
 
 	children map[string]*PathTargeter
@@ -37,7 +36,7 @@ func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 
 // TargeterConfig represents the configuration of a Targeter.
 type TargeterConfig struct {
-	Conn *zk.Conn
+	Conn Client
 	Root string
 	Pool string
 }
