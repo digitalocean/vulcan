@@ -25,7 +25,7 @@ type Targeter struct {
 func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 	t := &Targeter{
 		conn: config.Conn,
-		path: path.Join(config.Root, "scraper", config.Pool, "jobs"),
+		path: path.Join(config.Root, "scraper", "jobs"),
 
 		children: map[string]*PathTargeter{},
 		out:      make(chan scraper.Job),
@@ -38,7 +38,6 @@ func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 type TargeterConfig struct {
 	Conn Client
 	Root string
-	Pool string
 }
 
 // Targets implements scraper.Targeter interface.
