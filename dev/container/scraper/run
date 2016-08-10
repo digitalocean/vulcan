@@ -11,7 +11,7 @@ echo ">> waiting on kafka"
 /container/wait-for-it/wait-for-it.sh --timeout=45 kafka:9092
 
 echo ">> setting sample-job"
-vulcan job < $DIR/sample-job.yml
+vulcan job set < $DIR/sample-job.yml
 
 echo ">> running scraper"
 vulcan scraper
