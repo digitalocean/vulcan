@@ -15,7 +15,6 @@ type Pool struct {
 	id   string
 	conn Client
 	path string
-	pool string
 	done chan struct{}
 	out  chan []string
 	once sync.Once
@@ -26,8 +25,7 @@ func NewPool(config *PoolConfig) (*Pool, error) {
 	p := &Pool{
 		id:   config.ID,
 		conn: config.Conn,
-		path: path.Join(config.Root, "scraper", config.Pool, "scrapers"),
-		pool: config.Pool,
+		path: path.Join(config.Root, "scraper", "scrapers"),
 		done: make(chan struct{}),
 		out:  make(chan []string),
 	}
@@ -40,7 +38,6 @@ type PoolConfig struct {
 	ID   string
 	Conn Client
 	Root string
-	Pool string
 }
 
 func (p *Pool) run() {
@@ -48,7 +45,6 @@ func (p *Pool) run() {
 	mypath := path.Join(p.path, p.id)
 	mylog := log.WithFields(log.Fields{
 		"path": p.path,
-		"pool": p.pool,
 		"id":   p.id,
 	})
 	mylog.Info("registering self in zookeeper")

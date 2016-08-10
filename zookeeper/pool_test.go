@@ -49,7 +49,6 @@ func TestPoolRun(t *testing.T) {
 			id:   "default-test",
 			conn: c.Mock,
 			path: "/vulcan/test/scrapers",
-			pool: "default",
 			done: make(chan struct{}),
 			out:  make(chan []string),
 		}
