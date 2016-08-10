@@ -11,17 +11,14 @@ import (
 
 // Store is implemented on top of Zookeeper
 type Store struct {
-	cluster string
-	client  zookeeper.Client
-	root    string
+	client zookeeper.Client
+	root   string
 }
 
-// Config defines the scraper cluster and the zookeeper root so that we look
-// at the right data in zookeeper.
+// Config provides the zookeeper interface and the root to namespace keys to
 type Config struct {
-	Cluster string
-	Client  zookeeper.Client
-	Root    string
+	Client zookeeper.Client
+	Root   string
 }
 
 // NewStore creates a store from the config. It provides a default root value if
@@ -32,9 +29,8 @@ func NewStore(c *Config) (*Store, error) {
 		root = c.Root
 	}
 	return &Store{
-		cluster: c.Cluster,
-		client:  c.Client,
-		root:    root,
+		client: c.Client,
+		root:   root,
 	}, nil
 }
 
@@ -51,7 +47,7 @@ func (s *Store) Delete(name string) error {
 	return s.client.Delete(p, stat.Version)
 }
 
-// List shows all job names in zookeeper for the configured scraper cluster
+// List shows all job names in zookeeper
 func (s *Store) List() ([]string, error) {
 	c, _, err := s.client.Children(s.basePath())
 	return c, err
@@ -83,7 +79,7 @@ func (s *Store) Set(name string, b []byte) error {
 }
 
 func (s *Store) basePath() string {
-	return path.Join(s.root, "scraper", s.cluster, "jobs")
+	return path.Join(s.root, "scraper", "jobs")
 }
 
 func (s *Store) ensurePath(p string) error {

@@ -37,7 +37,6 @@ func Job() *cobra.Command {
 
 	job.PersistentFlags().String("zk-servers", "", "comma-separated list of zookeeper servers")
 	job.PersistentFlags().String("zk-root", "/vulcan", "zookeeper root namespace")
-	job.PersistentFlags().String("cluster", "default", "the scraper cluster")
 
 	set := &cobra.Command{
 		Use:   "set",
@@ -71,9 +70,8 @@ func Job() *cobra.Command {
 				return err
 			}
 			s, err := zookeeper.NewStore(&zookeeper.Config{
-				Root:    viper.GetString("zk-root"),
-				Cluster: viper.GetString("cluster"),
-				Client:  client,
+				Root:   viper.GetString("zk-root"),
+				Client: client,
 			})
 			if err != nil {
 				return err
@@ -101,9 +99,8 @@ func Job() *cobra.Command {
 				return err
 			}
 			s, err := zookeeper.NewStore(&zookeeper.Config{
-				Root:    viper.GetString("zk-root"),
-				Cluster: viper.GetString("cluster"),
-				Client:  client,
+				Root:   viper.GetString("zk-root"),
+				Client: client,
 			})
 			if err != nil {
 				return err
@@ -141,9 +138,8 @@ func Job() *cobra.Command {
 				return err
 			}
 			s, err := zookeeper.NewStore(&zookeeper.Config{
-				Root:    viper.GetString("zk-root"),
-				Cluster: viper.GetString("cluster"),
-				Client:  client,
+				Root:   viper.GetString("zk-root"),
+				Client: client,
 			})
 			if err != nil {
 				return err

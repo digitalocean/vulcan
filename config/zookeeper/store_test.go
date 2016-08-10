@@ -11,7 +11,6 @@ import (
 
 func TestStore(t *testing.T) {
 	tests := []struct {
-		cluster        string
 		root           string
 		name           string
 		value          []byte
@@ -22,13 +21,12 @@ func TestStore(t *testing.T) {
 		delete         [][]interface{}
 	}{
 		{
-			cluster: "test-cluster",
-			root:    "/my/root",
-			name:    "test-job",
-			value:   []byte("hi"),
+			root:  "/my/root",
+			name:  "test-job",
+			value: []byte("hi"),
 			get: [][]interface{}{[]interface{}{
 				"get",
-				"/my/root/scraper/test-cluster/jobs/test-job",
+				"/my/root/scraper/jobs/test-job",
 			}},
 			set: [][]interface{}{
 				[]interface{}{
@@ -52,19 +50,15 @@ func TestStore(t *testing.T) {
 				},
 				[]interface{}{
 					"exists",
-					"/my/root/scraper/test-cluster",
+					"/my/root/scraper/jobs",
 				},
 				[]interface{}{
 					"exists",
-					"/my/root/scraper/test-cluster/jobs",
-				},
-				[]interface{}{
-					"exists",
-					"/my/root/scraper/test-cluster/jobs/test-job",
+					"/my/root/scraper/jobs/test-job",
 				},
 				[]interface{}{
 					"set",
-					"/my/root/scraper/test-cluster/jobs/test-job",
+					"/my/root/scraper/jobs/test-job",
 					[]byte("hi"),
 					int32(42),
 				},
@@ -72,11 +66,11 @@ func TestStore(t *testing.T) {
 			delete: [][]interface{}{
 				[]interface{}{
 					"exists",
-					"/my/root/scraper/test-cluster/jobs/test-job",
+					"/my/root/scraper/jobs/test-job",
 				},
 				[]interface{}{
 					"delete",
-					"/my/root/scraper/test-cluster/jobs/test-job",
+					"/my/root/scraper/jobs/test-job",
 					int32(42),
 				},
 			},
@@ -91,9 +85,8 @@ func TestStore(t *testing.T) {
 			return false, nil, nil
 		}
 		s, err := NewStore(&Config{
-			Cluster: test.cluster,
-			Client:  mzk,
-			Root:    test.root,
+			Client: mzk,
+			Root:   test.root,
 		})
 		if err != nil {
 			t.Fatal(err)
