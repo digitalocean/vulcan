@@ -39,16 +39,15 @@ func TestPoolRun(t *testing.T) {
 	for i, test := range runValidations {
 		t.Logf("run validation test %d: %q", i, test.desc)
 
-		c := &ZKConn{
-			EventChannel: make(chan zk.Event),
-			Children:     test.children,
-			Jobs:         fmt.Sprintf("somejob%d", i),
-			CreateErr:    test.createErr,
-		}
+		c := NewZKConn()
+		c.EventChannel = make(chan zk.Event)
+		c.Children = test.children
+		c.Jobs = fmt.Sprintf("somejob%d", i)
+		c.CreateErr = test.createErr
 
 		p := &Pool{
 			id:   "default-test",
-			conn: c,
+			conn: c.Mock,
 			path: "/vulcan/test/scrapers",
 			pool: "default",
 			done: make(chan struct{}),

@@ -22,30 +22,32 @@ type ZKConn struct {
 	CreateErr    error
 	Children     []string
 	Jobs         string
+	Mock         Client
 }
 
-// GetW is a stubbed version of zk.GetW.
-func (c *ZKConn) GetW(path string) ([]byte, *zk.Stat, <-chan zk.Event, error) {
-	if c.GetErr != nil {
-		return nil, nil, nil, c.GetErr
+func NewZKConn() *ZKConn {
+	zkc := &ZKConn{}
+	mzk := NewMockZK()
+	mzk.GetwFn = func(path string) ([]byte, *zk.Stat, <-chan zk.Event, error) {
+		if zkc.GetErr != nil {
+			return nil, nil, nil, zkc.GetErr
+		}
+		return []byte(zkc.Jobs), zkc.Stat, zkc.EventChannel, nil
 	}
-	return []byte(c.Jobs), c.Stat, c.EventChannel, nil
-}
-
-// ChildrenW is a stubbed versionof zk.ChildrenW.
-func (c *ZKConn) ChildrenW(path string) ([]string, *zk.Stat, <-chan zk.Event, error) {
-	if c.ChildrenWErr != nil {
-		return nil, nil, nil, c.ChildrenWErr
+	mzk.ChildrenwFn = func(path string) ([]string, *zk.Stat, <-chan zk.Event, error) {
+		if zkc.ChildrenWErr != nil {
+			return nil, nil, nil, zkc.ChildrenWErr
+		}
+		return zkc.Children, zkc.Stat, zkc.EventChannel, zkc.ChildrenWErr
 	}
-	return c.Children, c.Stat, c.EventChannel, c.ChildrenWErr
-}
-
-// Create is a stubbed version of zk.Create.
-func (c *ZKConn) Create(path string, data []byte, flags int32, acl []zk.ACL) (string, error) {
-	if c.CreateErr != nil {
-		return "", c.CreateErr
+	mzk.CreateFn = func(path string, data []byte, flags int32, acl []zk.ACL) (string, error) {
+		if zkc.CreateErr != nil {
+			return "", zkc.CreateErr
+		}
+		return path, nil
 	}
-	return path, nil
+	zkc.Mock = mzk
+	return zkc
 }
 
 // SendEvent sends an event to the event channel after the provided delay.

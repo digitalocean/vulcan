@@ -70,10 +70,10 @@ func TestSetChildren(t *testing.T) {
 	for i, test := range happPathTests {
 		t.Logf("happy path test %d: %q", i, test.desc)
 
-		c := &ZKConn{
-			EventChannel: make(chan zk.Event),
-			Children:     test.param,
-			Jobs: `
+		c := NewZKConn()
+		c.EventChannel = make(chan zk.Event)
+		c.Children = test.param
+		c.Jobs = `
 scrape_configs:
   -
     job_name: haproxy_stats
@@ -81,12 +81,11 @@ scrape_configs:
     static_configs:
       - targets:
         - localhost:9101
-`,
-		}
+`
 
 		tg := Targeter{
-			conn:     c,
-			children: mapChildren(test.existingChildren, c),
+			conn:     c.Mock,
+			children: mapChildren(test.existingChildren, c.Mock),
 			path:     "/vulca/test/targeter",
 			out:      make(chan scraper.Job),
 		}

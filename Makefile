@@ -1,10 +1,14 @@
 VERSION := $(shell git describe --tags --always)
 
-.PHONY: all binary release source test vendor clean
+.PHONY: all binary lint release source test vendor clean
 
 all: test binary
 
 binary: target/vulcan
+
+lint:
+	@echo ">> linting source"
+	@golint ./...
 
 # release is created from the src tarball to ensure we have all dependencies included
 # in the tarball. We don't want to rely on glide or 3rd party repos to produce
