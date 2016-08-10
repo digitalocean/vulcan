@@ -1,7 +1,6 @@
 package zookeeper
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -29,10 +28,6 @@ func TestPoolRun(t *testing.T) {
 			children:   []string{"foo", "bar"},
 			eventDelay: 5,
 			closeDelay: 3,
-		},
-		{
-			desc:      "zk create error",
-			createErr: errors.New(CreateErrMsg),
 		},
 	}
 
