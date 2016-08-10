@@ -2,6 +2,7 @@ package zookeeper
 
 import (
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,29 @@ func (p *Pool) run() {
 		"path": p.path,
 		"id":   p.id,
 	})
+	// ensure path exists
+	parts := strings.Split(mypath, "/")
+	acc := ""
+	for i := 1; i < len(parts)-1; i++ {
+		acc = acc + "/" + parts[i]
+		log.WithFields(log.Fields{
+			"path": acc,
+		}).Debug("ensuring path exists")
+		exists, _, err := p.conn.Exists(acc)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if exists {
+			log.WithFields(log.Fields{
+				"path": acc,
+			}).Debug("path already exists")
+			continue
+		}
+		_, err = p.conn.Create(acc, []byte{}, 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	mylog.Info("registering self in zookeeper")
 	_, err := p.conn.Create(mypath, []byte{}, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err != nil {

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo ">> waiting on elasticsearch"
+/container/wait-for-it/wait-for-it.sh --timeout=45 elasticsearch:9200
+
+echo ">> waiting on cassandra"
+/container/wait-for-it/wait-for-it.sh --timeout=45 cassandra:9042
+
+# typically cassandra needs a little more time to actually be ready 
+sleep 10
+
+echo ">> running querier"
+vulcan querier
