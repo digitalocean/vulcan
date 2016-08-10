@@ -20,13 +20,33 @@ services:
   node_exporter:
     image: prom/node-exporter:0.12.0
     command:
-      - -collectors.enabled=diskstats,filesystem,loadavg,meminfo,netdev,stat,time,uname   
+      - -collectors.enabled=diskstats,filesystem,loadavg,meminfo,netdev,stat,time,uname
+
+  grafana:
+    build:
+      context: .
+      dockerfile: grafana.dockerfile
+    ports:
+      - '3000:3000'
+    links:
+      - querier:querier
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SESSION_PROVIDER: memory
+      GF_DASHBOARDS_JSON_ENABLED: 'true'
+      GF_DASHBOARDS_JSON_PATH: /container/grafana/dashboards
+    volumes:
+      - ./container:/container:ro
+    entrypoint: ['/container/grafana/run']
 
   scraper:
     build:
       context: ..
-      dockerfile: dev/Dockerfile
-    command: ['scraper']
+      dockerfile: dev/vulcan.dockerfile
+    volumes:
+      - ./container:/container:ro      
+    entrypoint: ['/container/scraper/run']
     links:
     - node_exporter:node_exporter
     - kafka:kafka
@@ -38,8 +58,10 @@ services:
   indexer:
     build:
       context: ..
-      dockerfile: dev/Dockerfile
-    command: ['indexer']
+      dockerfile: dev/vulcan.dockerfile
+    volumes:
+      - ./container:/container:ro      
+    entrypoint: ['/container/indexer/run']
     links:
     - node_exporter:node_exporter
     - kafka:kafka
@@ -52,8 +74,10 @@ services:
   ingester:
     build:
       context: ..
-      dockerfile: dev/Dockerfile
-    command: ['ingester']
+      dockerfile: dev/vulcan.dockerfile
+    volumes:
+      - ./container:/container:ro      
+    entrypoint: ['/container/ingester/run']
     links:
     - node_exporter:node_exporter
     - kafka:kafka
@@ -65,8 +89,12 @@ services:
   querier:
     build:
       context: ..
-      dockerfile: dev/Dockerfile
-    command: ['querier']
+      dockerfile: dev/vulcan.dockerfile
+    volumes:
+      - ./container:/container:ro
+    ports:
+      - '9090:9090'  
+    entrypoint: ['/container/querier/run']
     links:
     - node_exporter:node_exporter
     - kafka:kafka
