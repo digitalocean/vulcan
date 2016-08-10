@@ -21,11 +21,17 @@ func NewMockZK() *MockZK {
 	return &MockZK{
 		Args:       [][]interface{}{},
 		ChildrenFn: func(string) ([]string, *zk.Stat, error) { return []string{}, mockStat, nil },
-		CreateFn:   func(string, []byte, int32, []zk.ACL) (string, error) { return "", nil },
-		DeleteFn:   func(string, int32) error { return nil },
-		ExistsFn:   func(string) (bool, *zk.Stat, error) { return false, mockStat, nil },
-		GetFn:      func(string) ([]byte, *zk.Stat, error) { return []byte{}, mockStat, nil },
-		SetFn:      func(string, []byte, int32) (*zk.Stat, error) { return mockStat, nil },
+		ChildrenwFn: func(string) ([]string, *zk.Stat, <-chan zk.Event, error) {
+			return []string{}, mockStat, make(chan zk.Event), nil
+		},
+		CreateFn: func(string, []byte, int32, []zk.ACL) (string, error) { return "", nil },
+		DeleteFn: func(string, int32) error { return nil },
+		ExistsFn: func(string) (bool, *zk.Stat, error) { return false, mockStat, nil },
+		GetFn:    func(string) ([]byte, *zk.Stat, error) { return []byte{}, mockStat, nil },
+		GetwFn: func(string) ([]byte, *zk.Stat, <-chan zk.Event, error) {
+			return []byte{}, mockStat, make(chan zk.Event), nil
+		},
+		SetFn: func(string, []byte, int32) (*zk.Stat, error) { return mockStat, nil },
 	}
 }
 
@@ -83,7 +89,7 @@ func (mzk *MockZK) Get(path string) ([]byte, *zk.Stat, error) {
 
 func (mzk *MockZK) GetW(path string) ([]byte, *zk.Stat, <-chan zk.Event, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
-		"get",
+		"getw",
 		path,
 	})
 	return mzk.GetwFn(path)

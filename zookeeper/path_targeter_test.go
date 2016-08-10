@@ -72,13 +72,12 @@ scrape_configs:
 	for i, test := range runValidations {
 		t.Logf("run validations %d: %q", i, test.desc)
 
-		c := &ZKConn{
-			EventChannel: make(chan zk.Event),
-			Jobs:         test.jobs,
-		}
+		c := NewZKConn()
+		c.EventChannel = make(chan zk.Event)
+		c.Jobs = test.jobs
 
 		pt := &PathTargeter{
-			conn: c,
+			conn: c.Mock,
 			path: "/vulcan/test/",
 			done: make(chan struct{}),
 			out:  make(chan scraper.Job),
@@ -163,7 +162,7 @@ func TestParseJobs(t *testing.T) {
 		t.Logf("happy path test %d: %q", i, test.desc)
 
 		pt := &PathTargeter{
-			conn: &ZKConn{},
+			conn: NewZKConn().Mock,
 			path: "/vulcan/test",
 		}
 
@@ -244,7 +243,7 @@ scrape_configs:
 		t.Logf("negative test %d: %q", i, test.desc)
 
 		pt := &PathTargeter{
-			conn: &ZKConn{},
+			conn: NewZKConn().Mock,
 			path: "/vulcan/test",
 		}
 
