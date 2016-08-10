@@ -2,6 +2,9 @@ package zookeeper
 
 import "github.com/samuel/go-zookeeper/zk"
 
+// MockZK implements the zookeeper interface with overwritable implementation
+// functions so that tests can supply their own behaviour. It is public so that
+// it can be reused among other packages.
 type MockZK struct {
 	Args        [][]interface{}
 	ChildrenFn  func(path string) ([]string, *zk.Stat, error)
@@ -14,6 +17,8 @@ type MockZK struct {
 	SetFn       func(path string, data []byte, version int32) (*zk.Stat, error)
 }
 
+// NewMockZK returns a MockZK that has default implementations for all overridable
+// functions.
 func NewMockZK() *MockZK {
 	mockStat := &zk.Stat{
 		Version: 42,
@@ -35,6 +40,7 @@ func NewMockZK() *MockZK {
 	}
 }
 
+// Children returns the files contained at a given path
 func (mzk *MockZK) Children(path string) ([]string, *zk.Stat, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"children",
@@ -43,6 +49,8 @@ func (mzk *MockZK) Children(path string) ([]string, *zk.Stat, error) {
 	return mzk.ChildrenFn(path)
 }
 
+// ChildrenW returns the files contained at a given path plus a channel that
+// will contain a zk.Event when a change occurs at that path.
 func (mzk *MockZK) ChildrenW(path string) ([]string, *zk.Stat, <-chan zk.Event, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"childrenw",
@@ -51,6 +59,8 @@ func (mzk *MockZK) ChildrenW(path string) ([]string, *zk.Stat, <-chan zk.Event, 
 	return mzk.ChildrenwFn(path)
 }
 
+// Create puts data into zookeeper into a path when a key did not previously exists
+// at that path.
 func (mzk *MockZK) Create(path string, data []byte, flags int32, acl []zk.ACL) (string, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"create",
@@ -62,6 +72,7 @@ func (mzk *MockZK) Create(path string, data []byte, flags int32, acl []zk.ACL) (
 	return mzk.CreateFn(path, data, flags, acl)
 }
 
+// Delete removes a key from zookeeper that already exists.
 func (mzk *MockZK) Delete(path string, version int32) error {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"delete",
@@ -71,6 +82,8 @@ func (mzk *MockZK) Delete(path string, version int32) error {
 	return mzk.DeleteFn(path, version)
 }
 
+// Exists returns true when a path exists; it also returns a zk.Stats which
+// may be needed for future calls to operate on that same path.
 func (mzk *MockZK) Exists(path string) (bool, *zk.Stat, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"exists",
@@ -79,6 +92,7 @@ func (mzk *MockZK) Exists(path string) (bool, *zk.Stat, error) {
 	return mzk.ExistsFn(path)
 }
 
+// Get returns the data and zk.Stat for a given path.
 func (mzk *MockZK) Get(path string) ([]byte, *zk.Stat, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"get",
@@ -87,6 +101,8 @@ func (mzk *MockZK) Get(path string) ([]byte, *zk.Stat, error) {
 	return mzk.GetFn(path)
 }
 
+// GetW returns the data and zk.Stat for a given path plus a channel that will
+// populate with a zk.Event when the data at that path is altered.
 func (mzk *MockZK) GetW(path string) ([]byte, *zk.Stat, <-chan zk.Event, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"getw",
@@ -95,6 +111,8 @@ func (mzk *MockZK) GetW(path string) ([]byte, *zk.Stat, <-chan zk.Event, error) 
 	return mzk.GetwFn(path)
 }
 
+// Set writes data into zookeeper at a given path where the path already contained
+// data.
 func (mzk *MockZK) Set(path string, data []byte, version int32) (*zk.Stat, error) {
 	mzk.Args = append(mzk.Args, []interface{}{
 		"set",
