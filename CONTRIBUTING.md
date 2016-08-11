@@ -14,9 +14,9 @@ Once your suggestion has been submitted and discussed, please be sure that your
 code meets the following criteria:
   - code is completely `gofmt`'d
   - new features or codepaths have appropriate test coverage
-  - `go test ./...` passes
-  - `go vet ./...` passes
-  - `golint ./...` returns no warnings, including documentation comment warnings
+  - `make test` passes
+  - `make vet` passes
+  - `make lint` returns no warnings, including documentation comment warnings
 
 In addition, if this is your first time contributing to the Vulcan project,
 add your name and email address to the

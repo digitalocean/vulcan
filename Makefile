@@ -1,6 +1,6 @@
 VERSION := $(shell git describe --tags --always)
 
-.PHONY: all binary lint release source test vendor clean
+.PHONY: all binary lint release source test vendor vet clean
 
 all: test binary
 
@@ -22,6 +22,10 @@ test: vendor
 	@go test $(shell glide novendor)
 
 vendor: vendor/.touch
+
+vet:
+	@echo ">> vetting source"
+	@go vet $(shell glide novendor)
 
 clean:
 	@echo ">> removing target directory"
