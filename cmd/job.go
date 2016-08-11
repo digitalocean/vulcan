@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -32,7 +34,7 @@ var (
 func Job() *cobra.Command {
 	job := &cobra.Command{
 		Use:   "job",
-		Short: "job (set/delete/list) allows the operator to configure vulcan jobs",
+		Short: "job (set/delete/list/get) allows the operator to configure vulcan jobs",
 	}
 
 	job.PersistentFlags().String("zk-servers", "", "comma-separated list of zookeeper servers")
@@ -153,9 +155,50 @@ func Job() *cobra.Command {
 		},
 	}
 
+	get := &cobra.Command{
+		Use:   "get",
+		Short: "gets a sigle job",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// bind pflags to viper so they are settable by env variables
+			cmd.Flags().VisitAll(func(f *pflag.Flag) {
+				viper.BindPFlag(f.Name, f)
+			})
+
+			if len(args) == 0 {
+				return ErrNoArgs
+			}
+			if len(args) > 1 {
+				return ErrMultipleArgs
+			}
+
+			client, _, err := zk.Connect(strings.Split(viper.GetString("zk-servers"), ","), time.Second*2)
+			if err != nil {
+				return err
+			}
+			s, err := zookeeper.NewStore(&zookeeper.Config{
+				Root:   viper.GetString("zk-root"),
+				Client: client,
+			})
+			if err != nil {
+				return err
+			}
+
+			b, err := s.Get(args[0])
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(os.Stdout, bytes.NewReader(b))
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
 	job.AddCommand(set)
 	job.AddCommand(list)
 	job.AddCommand(delete)
+	job.AddCommand(get)
 
 	return job
 }
