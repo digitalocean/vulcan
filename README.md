@@ -2,6 +2,16 @@
 
 Vulcan is an API-compatible alternative to Prometheus. It aims to provide a better story for long-term storage, data durability, high cardinality metrics, high availability, and scalability. Vulcan is much more complex to operate, but should integrate with ease to an existing Prometheus environment. Vulcan aims to be familiar to Prometheus with configuration and queries by understanding the Prometheus scrape configuration file and the Prometheus Query Language.
 
+Vulcan is highly experimental.
+
+## Contributing
+
+Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## Contact
+
+The core developers are accessible via the [Vulcan Developers Mailinglist](https://groups.google.com/forum/#!forum/vulcan-developers)
+
 ## Ethos
 
 Vulcan should use open-source databases (e.g. Kafka, ElasticSearch, Cassandra)
