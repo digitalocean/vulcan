@@ -193,11 +193,112 @@ func TestResolver(t *testing.T) {
 			Matches: []*storage.Match{
 				&storage.Match{
 					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.Equal,
 					Name:  "l",
 					Value: "value-one",
 				},
 			},
 			Count: 2,
+		},
+		{
+			Matches: []*storage.Match{
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "l",
+					Value: "value-one",
+				},
+
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "other",
+					Value: "value",
+				},
+			},
+			Count: 1,
+		},
+		{
+			Matches: []*storage.Match{
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.NotEqual,
+					Name:  "l",
+					Value: "value-one",
+				},
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "other",
+					Value: "value",
+				},
+			},
+			Count: 0,
+		},
+		{
+			Matches: []*storage.Match{
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.NotEqual,
+					Name:  "l",
+					Value: "value-one",
+				},
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "other",
+					Value: "value",
+				},
+			},
+			Count: 0,
+		},
+		{
+			Matches: []*storage.Match{
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.RegexMatch,
+					Name:  "l",
+					Value: ".*one",
+				},
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "other",
+					Value: "value",
+				},
+			},
+			Count: 1,
+		},
+		{
+			Matches: []*storage.Match{
+				&storage.Match{
+					Type:  storage.Equal,
+					Name:  "__name__",
+					Value: "metric_1",
+				},
+				&storage.Match{
+					Type:  storage.RegexNoMatch,
+					Name:  "l",
+					Value: ".*two",
+				},
+			},
+			Count: 3,
 		},
 	}
 	for _, test := range tests {
