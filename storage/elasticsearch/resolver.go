@@ -43,6 +43,12 @@ func (mr *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 		switch m.Type {
 		case storage.Equal:
 			q.Filter(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.NotEqual:
+			q.MustNot(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.RegexMatch:
+			q.Filter(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.RegexNoMatch:
+			q.MustNot(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
 		default:
 			return []*bus.Metric{}, fmt.Errorf("unhandled match type")
 		}

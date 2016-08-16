@@ -7,7 +7,7 @@ type MatchType int
 const (
 	Equal MatchType = iota
 	NotEqual
-	RegexpMatch
+	RegexMatch
 	RegexNoMatch
 )
 
@@ -21,6 +21,5 @@ type Match struct {
 type Resolver interface {
 	// Resolve makes a query using the provided key value pairs of query
 	// params and transforms the results to Vulcan Metric type.
-	// Resolve(map[string]string) ([]*bus.Metric, error)
 	Resolve([]*Match) ([]*bus.Metric, error)
 }

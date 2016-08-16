@@ -260,7 +260,7 @@ func toMatches(matchers ...*metric.LabelMatcher) ([]*storage.Match, error) {
 		case metric.NotEqual:
 			next.Type = storage.NotEqual
 		case metric.RegexMatch:
-			next.Type = storage.RegexNoMatch
+			next.Type = storage.RegexMatch
 		case metric.RegexNoMatch:
 			next.Type = storage.RegexNoMatch
 		default:
