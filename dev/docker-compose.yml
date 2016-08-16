@@ -16,6 +16,8 @@ services:
 
   elasticsearch:
     image: elasticsearch:2.3.4
+    ports:
+      - '9200:9200'
 
   node_exporter:
     image: prom/node-exporter:0.12.0

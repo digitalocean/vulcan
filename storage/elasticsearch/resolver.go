@@ -5,41 +5,53 @@ import (
 
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+	"github.com/digitalocean/vulcan/storage"
 
 	"github.com/olivere/elastic"
 )
 
-// MetricResolver represents an object that makes queries against a target
+// Resolver represents an object that makes queries against a target
 // ElasticSearch cluster and transforms the results to a Vulcan Metric type.
-type MetricResolver struct {
+type Resolver struct {
 	client *elastic.Client
 	index  string
 }
 
-// MetricResolverConfig represents the configuration of a MetricResolver.
-type MetricResolverConfig struct {
+// ResolverConfig represents the configuration of a Resolver.
+type ResolverConfig struct {
 	URL   string
 	Sniff bool
 	Index string
 }
 
-// NewMetricResolver creates an instance of MetricResolver.
-func NewMetricResolver(config *MetricResolverConfig) (*MetricResolver, error) {
+// NewResolver creates an instance of Resolver.
+func NewResolver(config *ResolverConfig) (*Resolver, error) {
 	client, err := elastic.NewClient(elastic.SetURL(config.URL), elastic.SetSniff(config.Sniff))
 	if err != nil {
 		return nil, err
 	}
-	return &MetricResolver{
+	return &Resolver{
 		client: client,
 		index:  config.Index,
 	}, nil
 }
 
-// Resolve implements the storage.MetricResolver interface.
-func (mr *MetricResolver) Resolve(eq map[string]string) ([]*bus.Metric, error) {
+// Resolve implements the storage.Resolver interface.
+func (mr *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 	q := elastic.NewBoolQuery()
-	for k, v := range eq {
-		q.Filter(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(k)), v))
+	for _, m := range matches {
+		switch m.Type {
+		case storage.Equal:
+			q.Filter(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.NotEqual:
+			q.MustNot(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.RegexMatch:
+			q.Filter(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		case storage.RegexNoMatch:
+			q.MustNot(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
+		default:
+			return []*bus.Metric{}, fmt.Errorf("unhandled match type")
+		}
 	}
 	sr, err := mr.client.Search().
 		Index(mr.index).
