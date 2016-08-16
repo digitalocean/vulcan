@@ -20,7 +20,7 @@ type Querier struct {
 	prometheus.Collector
 
 	dpr storage.DatapointReader
-	mr  storage.MetricResolver
+	r   storage.Resolver
 
 	queryDurations *prometheus.SummaryVec
 }
@@ -28,7 +28,7 @@ type Querier struct {
 // Config represents the configuration of a Querier object.
 type Config struct {
 	DatapointReader storage.DatapointReader
-	MetricResolver  storage.MetricResolver
+	Resolver        storage.Resolver
 }
 
 // NewQuerier returns creates a new instance of Querier.
@@ -44,7 +44,7 @@ func NewQuerier(config *Config) *Querier {
 			[]string{"stage"},
 		),
 		dpr: config.DatapointReader,
-		mr:  config.MetricResolver,
+		r:   config.Resolver,
 	}
 }
 
@@ -64,7 +64,7 @@ func (q *Querier) Collect(ch chan<- prometheus.Metric) {
 func (q *Querier) Run() error {
 	ps, err := NewPrometheusWrapper(&PrometheusWrapperConfig{
 		DatapointReader: q.dpr,
-		MetricResolver:  q.mr,
+		MetricResolver:  q.r,
 	})
 	if err != nil {
 		return err

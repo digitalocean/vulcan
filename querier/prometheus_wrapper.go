@@ -1,6 +1,7 @@
 package querier
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -27,7 +28,7 @@ type PrometheusWrapper struct {
 
 	Preloader      *preloader
 	DPReader       storage.DatapointReader
-	metricResolver storage.MetricResolver
+	metricResolver storage.Resolver
 
 	queryDurations *prometheus.SummaryVec
 	matchesFound   prometheus.Summary
@@ -78,7 +79,7 @@ type SeriesIterator struct {
 // PrometheusWrapperConfig object.
 type PrometheusWrapperConfig struct {
 	DatapointReader storage.DatapointReader
-	MetricResolver  storage.MetricResolver
+	MetricResolver  storage.Resolver
 }
 
 // NewPrometheusWrapper creates a new instance of PrometheusWrapper
@@ -246,6 +247,53 @@ func (pw *PrometheusWrapper) NewPreloader() local.Preloader {
 	return pw.Preloader
 }
 
+func toMatches(matchers ...*metric.LabelMatcher) ([]*storage.Match, error) {
+	matches := make([]*storage.Match, 0, len(matchers))
+	for _, m := range matchers {
+		next := &storage.Match{
+			Name:  string(m.Name),
+			Value: string(m.Value),
+		}
+		switch m.Type {
+		case metric.Equal:
+			next.Type = storage.Equal
+		case metric.NotEqual:
+			next.Type = storage.NotEqual
+		case metric.RegexMatch:
+			next.Type = storage.RegexNoMatch
+		case metric.RegexNoMatch:
+			next.Type = storage.RegexNoMatch
+		default:
+			return []*storage.Match{}, fmt.Errorf("unhandled match type")
+		}
+		matches = append(matches, next)
+	}
+	return matches, nil
+}
+
+func toModelMetric(metrics []*bus.Metric) []model.Metric {
+	// convert to model.Metric
+	modms := make([]model.Metric, 0, len(metrics))
+	for _, m := range metrics {
+		modm := model.Metric{}
+		for key, value := range m.Labels {
+			modm[model.LabelName(key)] = model.LabelValue(value)
+		}
+		modm[model.LabelName("__name__")] = model.LabelValue(m.Name)
+		modms = append(modms, modm)
+	}
+	return modms
+}
+
+func toFingerprintedMetric(metrics []model.Metric) map[model.Fingerprint]metric.Metric {
+	fpm := map[model.Fingerprint]metric.Metric{}
+	for _, m := range metrics {
+		fp := m.Fingerprint()
+		fpm[fp] = metric.Metric{Metric: m}
+	}
+	return fpm
+}
+
 // MetricsForLabelMatchers implements the prometheus storage interface. Given prometheus label
 // matches, it returns the full metric names that match (using the metric fingerprint to fulfil
 // the interface... which isn't ideal for our model but works).
@@ -254,38 +302,34 @@ func (pw *PrometheusWrapper) MetricsForLabelMatchers(from, through model.Time, m
 	defer func() {
 		pw.matchesFound.Observe(float64(len(result)))
 	}()
-	matchingMetrics := []model.Metric{}
-	// create map of terms that must equal
-	eq := map[string]string{}
-	for _, matcher := range matchers {
-		if matcher.Type != metric.Equal {
-			continue // TODO handle all prometheus matcher types
-		}
-		eq[string(matcher.Name)] = string(matcher.Value)
+	// convert prometheus matchers to vulcan matchers
+	m, err := toMatches(matchers...)
+	if err != nil {
+		log.Printf("%s", err)
+		return map[model.Fingerprint]metric.Metric{}
 	}
-	// use metric resolver with equal terms
-	metrics, err := pw.metricResolver.Resolve(eq)
+	// get matching metrics
+	metrics, err := pw.metricResolver.Resolve(m)
 	if err != nil {
 		log.Println(err)
-		return result
+		return map[model.Fingerprint]metric.Metric{}
 	}
-	// convert to model metrics
-	for _, met := range metrics {
-		mm := model.Metric{}
-		for key, value := range met.Labels {
-			mm[model.LabelName(key)] = model.LabelValue(value)
-		}
-		mm[model.LabelName("__name__")] = model.LabelValue(met.Name)
-		matchingMetrics = append(matchingMetrics, mm)
-	}
+	// convert vulcan metrics to fingerprinted prometheus metrics
+	fpm := toFingerprintedMetric(toModelMetric(metrics))
+
+	// hacky hacky hack to allow this preloader to resolve a fingerprint to
+	// a metric since it will need to later fetch data for a metric with only
+	// a fingerprint parameter
+	// TODO write vulcan HTTP API from scratch to avoid this hack
 	pw.Preloader.fingerPrintLock.Lock()
-	defer pw.Preloader.fingerPrintLock.Unlock()
 	// hack matching keys into fingerprints
-	for _, m := range matchingMetrics {
-		fp := m.Fingerprint()
-		pw.Preloader.HackFingerprint[fp] = m // hack to be able to lookup original metric later
-		result[fp] = metric.Metric{Metric: m}
+	for fp, m := range fpm {
+		pw.Preloader.HackFingerprint[fp] = m.Metric
 	}
+	pw.Preloader.fingerPrintLock.Unlock()
+	// end hacky hacky hack
+
+	result = fpm
 	return result
 }
 
