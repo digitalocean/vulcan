@@ -21,22 +21,22 @@ type chState struct {
 // scrape. The targeter watches the zookeeper path to react to new/changed/removed
 // child nodes and their corresponding nodes.
 type Targeter struct {
-	conn Client
-	path string
-
+	conn     Client
+	path     string
 	children map[string]*chState
-	once     sync.Once
-	out      chan []scraper.Targeter
-	done     chan struct{}
-	mutex    *sync.Mutex
+
+	out  chan []scraper.Targeter
+	done chan struct{}
+
+	once  sync.Once
+	mutex *sync.Mutex
 }
 
 // NewTargeter returns a new instance of Targeter.
 func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 	t := &Targeter{
-		conn: config.Conn,
-		path: path.Join(config.Root, "scraper", "jobs"),
-
+		conn:     config.Conn,
+		path:     path.Join(config.Root, "scraper", "jobs"),
 		children: map[string]*chState{},
 		out:      make(chan []scraper.Targeter),
 		mutex:    new(sync.Mutex),
@@ -104,27 +104,31 @@ func (t *Targeter) run() {
 }
 
 func (t *Targeter) listenForJobs(childName string, state *chState, done <-chan struct{}) {
-	select {
-	case jobs := <-state.pt.Jobs():
+	ll := log.WithFields(log.Fields{
+		"targeter": "listenForJobs",
+		"child":    childName,
+	})
 
-		log.WithFields(log.Fields{
-			"targeter": "listenForJobs",
-			"child":    childName,
-		}).Debug("job update received")
+	for {
+		select {
+		case jobs := <-state.pt.Jobs():
 
-		var targets []scraper.Targeter
-		for _, job := range jobs {
-			targets = append(targets, job.GetTargets()...)
+			ll.Debug("job update received")
+
+			var targets []scraper.Targeter
+			for _, job := range jobs {
+				targets = append(targets, job.GetTargets()...)
+			}
+			t.mutex.Lock()
+
+			t.children[childName].targets = targets
+			t.out <- t.allTargets()
+
+			t.mutex.Unlock()
+
+		case <-done:
+			return
 		}
-		t.mutex.Lock()
-
-		t.children[childName].targets = targets
-		t.out <- t.allTargets()
-
-		t.mutex.Unlock()
-
-	case <-done:
-		return
 	}
 }
 

@@ -2,14 +2,23 @@ package zookeeper
 
 import (
 	"errors"
-	"strings"
+	"fmt"
+	"net/url"
+	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/digitalocean/vulcan/scraper"
 
+	"github.com/prometheus/common/model"
+	pconfig "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
 	"github.com/samuel/go-zookeeper/zk"
 )
+
+// TODO impement JobDeepEquals
 
 func TestPathTargeterRun(t *testing.T) {
 	var runValidations = []struct {
@@ -79,10 +88,12 @@ scrape_configs:
 		c.Jobs = map[string]string{testPath: test.jobs}
 
 		pt := &PathTargeter{
-			conn: c.Mock,
-			path: testPath,
-			done: make(chan struct{}),
-			out:  make(chan []scraper.Job),
+			conn:  c.Mock,
+			path:  testPath,
+			done:  make(chan struct{}),
+			out:   make(chan []scraper.Job),
+			mutex: new(sync.Mutex),
+			jobs:  map[string]scraper.Job{},
 		}
 
 		testCh := make(chan struct{})
@@ -118,45 +129,671 @@ scrape_configs:
 	}
 }
 
-func TestParseJobs(t *testing.T) {
-	var happyPathTests = []struct {
-		desc          string
-		param         string
-		jobsByName    []string
-		targetsByName []string
+func TestK8Jobs(t *testing.T) {
+	initialize := func(delay time.Duration) (
+		pt *PathTargeter,
+		tp *MockTargetProvider,
+		ctxCancelFunc func(),
+	) {
+		sc := &pconfig.ScrapeConfig{
+			JobName: "test",
+			KubernetesSDConfigs: []*pconfig.KubernetesSDConfig{
+				&pconfig.KubernetesSDConfig{
+					APIServers: []pconfig.URL{},
+				},
+			},
+			Scheme:      "http",
+			MetricsPath: "/metrics",
+		}
+
+		pt = &PathTargeter{
+			conn:  NewZKConn().Mock,
+			path:  "/sammy/test",
+			done:  make(chan struct{}),
+			out:   make(chan []scraper.Job),
+			mutex: new(sync.Mutex),
+			jobs:  map[string]scraper.Job{},
+		}
+
+		// set up mock target provider
+		tp = &MockTargetProvider{Interval: delay}
+		providerFn := func(c *pconfig.KubernetesSDConfig) (retrieval.TargetProvider, error) {
+			return tp, nil
+		}
+
+		ctx, cancelFunc := context.WithCancel(context.Background())
+
+		go pt.k8Jobs(sc, providerFn, ctx)
+
+		return pt, tp, cancelFunc
+	}
+	// We expected always n-1 updates on the out channel b/c the first update
+	// relies on the run() function to send.
+	var moreThanOneEventTests = []struct {
+		desc            string
+		delay           time.Duration
+		expectedUpdates int
 	}{
 		{
-			desc: "1 job 1 target",
-			param: `
-  scrape_configs:
-    -
-      job_name: static_configs
-      metrics_path: /metrics
-      static_configs:
-        - targets:
-          - localhost:9101
-  `,
-			jobsByName:    []string{"haproxy_stats"},
-			targetsByName: []string{"localhost:9101"},
+			desc:            "2 target provider channel events, 1 update",
+			delay:           time.Duration(500 * time.Millisecond),
+			expectedUpdates: 1,
 		},
 		{
-			desc: "1 job 5 target",
-			param: `
-  scrape_configs:
-    -
-      job_name: static_configs
-      metrics_path: /metrics
-      static_configs:
-        - targets:
-          - localhost:9101
-          - localhost:9102
-          - www.sammy.com:9101
-          - net.droplet.org:8080
-          - cool.storage.io:8888
-  `,
-			jobsByName: []string{"static_configs"},
-			targetsByName: []string{"localhost:9101", "localhost:9102",
-				"www.sammy.com:9101", "net.droplet.org:8080", "cool.storage.io:8888"},
+			desc:            "3 target provider channel events, 2 updates",
+			delay:           time.Duration(2 * time.Second),
+			expectedUpdates: 2,
+		},
+		{
+			desc:            "20 target provider channel events, 19 updates",
+			delay:           time.Duration(250 * time.Millisecond),
+			expectedUpdates: 19,
+		},
+		{
+			desc:            "100 target provider channel events, 99 updates",
+			delay:           time.Duration(50 * time.Millisecond),
+			expectedUpdates: 99,
+		},
+	}
+
+	for i, test := range moreThanOneEventTests {
+		t.Logf("more than 1 event tests %d: %q", i, test.desc)
+
+		pt, tp, cancelFunc := initialize(test.delay)
+
+		// set up counter for update test validation
+		var updateCount int
+
+		go func() {
+			for _ = range pt.Jobs() {
+				updateCount++
+			}
+		}()
+
+		// send out events thru mock target provider
+		go func() {
+			for i := 0; i <= test.expectedUpdates; i++ {
+				tp.SendTargetGroups([]*pconfig.TargetGroup{
+					&pconfig.TargetGroup{
+						Source: fmt.Sprintf("test-%d", i),
+						Targets: []model.LabelSet{
+							model.LabelSet{
+								"__address__": "foobar.digitalocean.com",
+							},
+							model.LabelSet{
+								"__address__": "barfoo.digitalocean.com",
+							},
+						},
+					},
+				})
+			}
+		}()
+
+		// give enougth time for events to process
+		time.Sleep(test.delay * time.Duration(2*(test.expectedUpdates+1)))
+
+		cancelFunc()
+
+		if updateCount != test.expectedUpdates {
+			t.Fatalf(
+				"k8Jobs() => %d update events; expected %d",
+				updateCount,
+				test.expectedUpdates,
+			)
+		}
+
+		// validate current jobs of part-targeter instance
+		for i := 0; i <= test.expectedUpdates; i++ {
+			key := fmt.Sprintf("%s/0/test-%d", kubernetesJob, i)
+			if _, ok := pt.jobs[key]; !ok {
+				t.Errorf(
+					"k8Jobs() => expected job key %q in current jobs; found none",
+					key,
+				)
+			}
+		}
+	}
+
+	var initialEventTest = []struct {
+		desc  string
+		delay time.Duration
+	}{
+		{
+			desc:  "1 event, 1 second delay",
+			delay: time.Duration(1 * time.Second),
+		},
+	}
+
+	for i, test := range initialEventTest {
+		t.Logf("initial event test %d: %q", i, test.desc)
+
+		pt, tp, cancelFunc := initialize(test.delay)
+
+		go func() {
+			for _ = range pt.Jobs() {
+			}
+		}()
+
+		go func() {
+			tp.SendTargetGroups([]*pconfig.TargetGroup{
+				&pconfig.TargetGroup{
+					Source: fmt.Sprintf("test-0"),
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							"__address__": "foobar.digitalocean.com",
+						},
+						model.LabelSet{
+							"__address__": "barfoo.digitalocean.com",
+						},
+					},
+				},
+			})
+		}()
+
+		// sleep to get event time to finish
+		time.Sleep(2 * test.delay)
+
+		cancelFunc()
+
+		key := fmt.Sprintf("%s/0/test-0", kubernetesJob)
+		if _, ok := pt.jobs[key]; !ok {
+			t.Errorf(
+				"k8Jobs() => expected job key %q in current jobs; found none",
+				key,
+			)
+		}
+	}
+}
+
+func TestTgToJob(t *testing.T) {
+	var happyPathTests = []struct {
+		desc                 string
+		tg                   *pconfig.TargetGroup
+		sc                   *pconfig.ScrapeConfig
+		expectedTargeterKeys []string
+	}{
+		{
+			desc: "1 target",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__address__": "foobar.digitalocean.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+			},
+			expectedTargeterKeys: []string{
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+			},
+		},
+		{
+			desc: "2 targets",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__address__": "foobar.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "barfoo.digitalocean.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+			},
+			expectedTargeterKeys: []string{
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "barfoo.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+			},
+		},
+		{
+			desc: "10 targets",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__address__": "foobar0.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar1.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar2.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar3.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar4.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar5.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar6.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar7.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar8.digitalocean.com",
+					},
+					model.LabelSet{
+						"__address__": "foobar9.digitalocean.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+			},
+			expectedTargeterKeys: []string{
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar0.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar1.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar2.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar3.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar4.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar5.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar6.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar7.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar8.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar9.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+			},
+		},
+		{
+			desc: "10 targets, none valid",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__a__": "foobar0.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar1.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar2.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar3.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar4.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar5.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar6.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar7.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar8.digitalocean.com",
+					},
+					model.LabelSet{
+						"__a__": "foobar9.digitalocean.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+			},
+			expectedTargeterKeys: []string{},
+		},
+	}
+
+	for i, test := range happyPathTests {
+		t.Logf("happy path tests %d: %q", i, test.desc)
+
+		pt := &PathTargeter{
+			conn: NewZKConn().Mock,
+		}
+
+		j := pt.tgToJob(test.tg, test.sc)
+		if len(j.GetTargets()) != len(test.expectedTargeterKeys) {
+			t.Errorf(
+				"tgToJob(%v, %v) => job with %d Targeters; got %d",
+				*test.tg,
+				*test.sc,
+				len(j.GetTargets()),
+				len(test.expectedTargeterKeys),
+			)
+		}
+
+		for _, key := range test.expectedTargeterKeys {
+			var found bool
+
+			for _, targeter := range j.GetTargets() {
+				if targeter.Key() == key {
+					found = true
+				}
+			}
+
+			if !found {
+				t.Errorf(
+					"tgToJob(%v, %v) => expected targeter key %q; found none",
+					*test.tg,
+					*test.sc,
+					key,
+				)
+			}
+		}
+	}
+
+}
+
+// TODO Integrate JobDeepEquals for better test validation.
+func TestAllJobs(t *testing.T) {
+	var happyPathTests = []struct {
+		desc        string
+		currentJobs map[string]scraper.Job
+		expected    []scraper.Job
+	}{
+		{
+			desc: "1 job, 1 target",
+			currentJobs: map[string]scraper.Job{
+				"foo-static": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: []scraper.Job{
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+		},
+		{
+			desc: "1 job, 2 targets",
+			currentJobs: map[string]scraper.Job{
+				"foo-static": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: []scraper.Job{
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+		},
+		{
+			desc: "2 jobs, 1 target each",
+			currentJobs: map[string]scraper.Job{
+				"foo-static": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: []scraper.Job{
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+		},
+
+		{
+			desc: "10 jobs, 1 target each",
+			currentJobs: map[string]scraper.Job{
+				"foo-static": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-0": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo0.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-1": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo1.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-2": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo2.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-3": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo3.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-4": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo4.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-5": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo5.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-6": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo6.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-7": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo7.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"foo-k8-8": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo8.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: []scraper.Job{
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo0.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo1.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo2.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo3.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo4.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo5.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo6.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo7.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "foo",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "foo",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo8.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
 		},
 	}
 
@@ -164,103 +801,250 @@ func TestParseJobs(t *testing.T) {
 		t.Logf("happy path test %d: %q", i, test.desc)
 
 		pt := &PathTargeter{
-			conn: NewZKConn().Mock,
-			path: "/vulcan/test",
+			conn:  NewZKConn().Mock,
+			done:  make(chan struct{}),
+			out:   make(chan []scraper.Job),
+			mutex: new(sync.Mutex),
+			jobs:  test.currentJobs,
 		}
 
-		jobs, err := pt.parseJobs([]byte(test.param))
-		if err != nil {
+		got := pt.allJobs()
+
+		if len(got) != len(test.expected) {
 			t.Errorf(
-				"parseJobs(%s) => %v,%v; expected nil errors",
-				test.param,
-				jobs,
-				err,
+				"AllJobs() => got %d jobs; expected %d",
+				len(got),
+				len(test.expected),
 			)
-		}
-
-		if len(jobs) != len(test.jobsByName) {
-			t.Errorf(
-				"parseJobs(%s) => %v == %d jobs; expected %d;",
-				test.param,
-				jobs,
-				len(jobs),
-				len(test.jobsByName),
-			)
-		}
-
-		for _, job := range jobs {
-
-			for _, expectedTarget := range test.targetsByName {
-				var found bool
-				for _, gotTarget := range job.GetTargets() {
-					if strings.Contains(gotTarget.Key(), expectedTarget) {
-						found = true
-					}
-				}
-				if !found {
-					t.Errorf(
-						"parseJobs(%s) => jobs -> %v; expected target for %s",
-						test.param,
-						job.GetTargets(),
-						expectedTarget,
-					)
-				}
-			}
 		}
 	}
 
-	var negativeTests = []struct {
-		desc  string
-		param string
+}
+
+// TODO integrate JobDeepEquals for better test validation.
+func TestSetJob(t *testing.T) {
+	var happyPathTests = []struct {
+		desc        string
+		key         string
+		tgs         []*pconfig.TargetGroup
+		sc          *pconfig.ScrapeConfig
+		currentJobs map[string]scraper.Job
+		expected    map[string]scraper.Job
 	}{
 		{
-			desc: "bad yaml format",
-			param: `
-scrape_configs:
-  -
-    job_name: haproxy_stats
-    metrics_path: /metrics
-    static_targets:
-      - targets:
-        - localhost:9101
-`,
+			desc: "set 1 job, no currentJobs",
+			key:  "test123-k8",
+			tgs: []*pconfig.TargetGroup{
+				&pconfig.TargetGroup{
+					Source: "test",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							"__address__": "foobar.digitalocean.com",
+						},
+						model.LabelSet{
+							"__address__": "barfoo.digitalocean.com",
+						},
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:     "testjob1",
+				Scheme:      "http",
+				MetricsPath: "/metrics",
+			},
+			currentJobs: map[string]scraper.Job{},
+			expected: map[string]scraper.Job{
+				"test123-k8/test": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
 		},
 		{
-			desc: "zero scrape_configs",
-			param: `
-scrape_configs:
-`,
+			desc: "set 1 job, target source is only current job",
+			key:  "test123-k8",
+			tgs: []*pconfig.TargetGroup{
+				&pconfig.TargetGroup{
+					Source: "test",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							"__address__": "foobar.digitalocean.com",
+						},
+						model.LabelSet{
+							"__address__": "barfoo.digitalocean.com",
+						},
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:     "testjob1",
+				Scheme:      "http",
+				MetricsPath: "/metrics",
+			},
+			currentJobs: map[string]scraper.Job{
+				"test123-k8/test": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: map[string]scraper.Job{
+				"test123-k8/test": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
 		},
 		{
-			desc: "zero length byte slice",
+			desc: "set 2 target group, 1 key exists in current jobs",
+			key:  "test123-k8",
+			tgs: []*pconfig.TargetGroup{
+				&pconfig.TargetGroup{
+					Source: "test",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							"__address__": "foobar.digitalocean.com",
+						},
+						model.LabelSet{
+							"__address__": "barfoo.digitalocean.com",
+						},
+					},
+				},
+				&pconfig.TargetGroup{
+					Source: "test2",
+					Targets: []model.LabelSet{
+						model.LabelSet{
+							"__address__": "foobar.oceandigital.com",
+						},
+						model.LabelSet{
+							"__address__": "barfoo.oceandigital.com",
+						},
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:     "testjob1",
+				Scheme:      "http",
+				MetricsPath: "/metrics",
+			},
+			currentJobs: map[string]scraper.Job{
+				"test123-k8/test": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"test123-otherjob": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "sammy.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
+			expected: map[string]scraper.Job{
+				"test123-k8/test": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"test123-k8/test2": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "foobar.oceandigital.com", Path: "/metrics"},
+						}),
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.oceandigital.com", Path: "/metrics"},
+						}),
+					},
+				}),
+				"test123-otherjob": scraper.NewStaticJob(&scraper.StaticJobConfig{
+					JobName: "testjob1",
+					Targeters: []scraper.Targeter{
+						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+							JobName: "testjob1",
+							URL:     &url.URL{Scheme: "http", Host: "sammy.digitalocean.com", Path: "/metrics"},
+						}),
+					},
+				}),
+			},
 		},
-		// 		{
-		// 			desc: "bad url format",
-		// 			param: `
-		// scrape_configs:
-		//   -
-		//     job_name: haproxy_stats
-		//     scheme: √©≥÷µ
-		//     metrics_path: √fhj//&%&\\|\©≥÷µ
-		//     static_configs:
-		//       - targets:
-		//         - localhost:9101
-		// `,
-		// 		},
 	}
-	for i, test := range negativeTests {
-		t.Logf("negative test %d: %q", i, test.desc)
+
+	for i, test := range happyPathTests {
+		t.Logf("happy path test %d: %q", i, test.desc)
 
 		pt := &PathTargeter{
-			conn: NewZKConn().Mock,
-			path: "/vulcan/test",
+			conn:  NewZKConn().Mock,
+			done:  make(chan struct{}),
+			out:   make(chan []scraper.Job),
+			mutex: new(sync.Mutex),
+			jobs:  test.currentJobs,
 		}
 
-		if _, err := pt.parseJobs([]byte(test.param)); err == nil {
-			t.Errorf(
-				"parseJobs(%s) => _, nil; expected an error",
-				test.param,
-			)
+		pt.setJob(test.key, test.tgs, test.sc)
+
+		for key, expectedTgt := range test.expected {
+			gotTgt, ok := pt.jobs[key]
+			if !ok {
+				t.Fatalf(
+					"setJob(%s, %v, %v) => expected job for key %q but not found",
+					test.key,
+					test.tgs,
+					*test.sc,
+					key,
+				)
+			}
+
+			if len(gotTgt.GetTargets()) != len(expectedTgt.GetTargets()) {
+				t.Errorf(
+					"setJob(%s, %v, %v) => got %d targets for key %q; expected %d",
+					test.key,
+					test.tgs,
+					*test.sc,
+					len(gotTgt.GetTargets()),
+					key,
+					len(expectedTgt.GetTargets()),
+				)
+			}
 		}
 	}
 }

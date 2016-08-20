@@ -14,7 +14,7 @@ import (
 
 // HTTPTarget represents an instance of an HTTP scraper target.
 type HTTPTarget struct {
-	u url.URL
+	u *url.URL
 	i time.Duration
 	j JobName
 }
@@ -22,7 +22,7 @@ type HTTPTarget struct {
 // HTTPTargetConfig represents the configuration of an HTTPTarget.
 type HTTPTargetConfig struct {
 	Interval time.Duration
-	URL      url.URL
+	URL      *url.URL
 	JobName  JobName
 }
 

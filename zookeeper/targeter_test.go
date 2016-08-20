@@ -19,10 +19,12 @@ func mapChildren(cn []string, conn Client, rootPath string) map[string]*chState 
 	for _, c := range cn {
 		m[c] = &chState{
 			pt: &PathTargeter{
-				conn: conn,
-				path: path.Join(rootPath, c),
-				done: make(chan struct{}),
-				out:  make(chan []scraper.Job),
+				conn:  conn,
+				path:  path.Join(rootPath, c),
+				done:  make(chan struct{}),
+				out:   make(chan []scraper.Job),
+				mutex: new(sync.Mutex),
+				jobs:  map[string]scraper.Job{},
 			},
 		}
 		go m[c].pt.run()
@@ -112,7 +114,7 @@ scrape_configs:
 			children: map[string]*chState{},
 			path:     zkRoot,
 			out:      make(chan []scraper.Targeter),
-			mutex:    &sync.Mutex{},
+			mutex:    new(sync.Mutex),
 		}
 
 		close := make(chan struct{})

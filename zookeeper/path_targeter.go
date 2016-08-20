@@ -12,6 +12,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
+	"golang.org/x/net/context"
+)
+
+const (
+	staticJob     = `static`
+	kubernetesJob = `kubernetes`
 )
 
 // PathTargeter represents an object that connects to Zookeeper and queries
@@ -19,10 +26,13 @@ import (
 type PathTargeter struct {
 	conn Client
 	path string
+	jobs map[string]scraper.Job
 
 	done chan struct{}
 	out  chan []scraper.Job
-	once sync.Once
+
+	once  sync.Once
+	mutex *sync.Mutex
 }
 
 // PathTargeterConfig represents the configuration of a PathTargeter.
@@ -37,8 +47,11 @@ func NewPathTargeter(config *PathTargeterConfig) *PathTargeter {
 		conn: config.Conn,
 		path: config.Path,
 
-		done: make(chan struct{}),
-		out:  make(chan []scraper.Job),
+		done:  make(chan struct{}),
+		out:   make(chan []scraper.Job),
+		mutex: new(sync.Mutex),
+		// only support 2 job types ATM
+		jobs: map[string]scraper.Job{},
 	}
 	go pt.run()
 	return pt
@@ -67,87 +80,241 @@ func (pt *PathTargeter) run() {
 		default:
 		}
 
-		ll.Info("getting value")
+		ll.Info("getting jobs")
 		b, _, ech, err := pt.conn.GetW(pt.path)
 		if err != nil {
 			ll.WithError(err).Error("while getting path")
 			time.Sleep(time.Second * 2) // TODO exponential backoff
 			continue
 		}
-		ll.Infof("got value:%q", string(b))
+		ll.WithField("config", string(b)).Info("got job")
 
-		jobs, err := pt.parseJobs(b)
+		ctx, cancelFunc := context.WithCancel(context.Background())
+
+		scfgs, err := pt.parseConfig(b)
 		if err != nil {
-			ll.WithError(err).Error("while parsing value")
+			ll.WithError(err).Error("while parsing job config")
 			time.Sleep(time.Second * 2) // TODO exponential backoff
 			continue
 		}
 
+		for i, sc := range scfgs {
+			// static configs
+			pt.setJob(fmt.Sprintf("%s/%d", staticJob, i), sc.StaticConfigs, sc)
+			ll.WithField("jobs", pt.jobs).Info("parsed static jobs")
+
+			// K8 service discovery configs
+			pt.k8Jobs(sc, k8discovery, ctx)
+			ll.WithField("jobs", pt.jobs).Info("parsed kubernetes jobs")
+
+		}
+		// block until job slice sent
 		select {
 		case <-pt.done:
+			cancelFunc()
 			return
 
-		case pt.out <- jobs:
+		case pt.out <- pt.allJobs():
 		}
 
 		select {
 		case <-pt.done:
+			cancelFunc()
 			return
 
 		case <-ech:
+			break
 		}
+
 	}
 }
 
-func (pt *PathTargeter) parseJobs(b []byte) ([]scraper.Job, error) {
-	jobs := []scraper.Job{}
+func (pt *PathTargeter) parseConfig(b []byte) ([]*pconfig.ScrapeConfig, error) {
 	c, err := pconfig.Load(string(b))
 	if err != nil {
-		return jobs, err
+		return nil, err
 	}
 
 	if len(c.ScrapeConfigs) < 1 {
-		return jobs, errors.New("no scrape configs provided")
+		return nil, errors.New("no scrape configs provided")
 	}
 
-	for _, sc := range c.ScrapeConfigs {
-		sj := pt.staticJobs(sc)
-		log.WithField("path", pt.path).Debugf("parsed static jobs: %v", sj)
-		// TODO handle other types of scrape configs (e.g. DNS and Kubernetes)
-		jobs = append(jobs, sj)
-	}
-	return jobs, nil
+	return c.ScrapeConfigs, nil
 }
 
-func (pt *PathTargeter) staticJobs(sc *pconfig.ScrapeConfig) scraper.Job {
-	j := scraper.NewStaticJob(&scraper.StaticJobConfig{
-		JobName:   scraper.JobName(sc.JobName),
-		Targeters: []scraper.Targeter{},
-	})
+func (pt *PathTargeter) k8Jobs(
+	sc *pconfig.ScrapeConfig,
+	providerFn func(*pconfig.KubernetesSDConfig) (retrieval.TargetProvider, error),
+	ctx context.Context,
+) {
+	var (
+		ch = make(chan []*pconfig.TargetGroup)
+		wg = new(sync.WaitGroup)
+		ll = log.WithFields(log.Fields{
+			"path": pt.path,
+			"type": kubernetesJob,
+		})
+	)
 
-	for _, tg := range sc.StaticConfigs {
+	for i, config := range sc.KubernetesSDConfigs {
+		ll = ll.WithField("config", *config)
+		ll.Debug("processing k8 config")
 
-		for _, t := range tg.Targets {
-			inst := string(t[model.LabelName("__address__")])
+		kd, err := providerFn(config)
+		if err != nil {
+			ll.WithError(err).Error("could not create discovery object")
+			continue
+		}
+		go pt.discoverTargetGroups(
+			kd,
+			fmt.Sprintf("%s/%d", kubernetesJob, i),
+			sc,
+			wg,
+			ch,
+			ctx,
+			ll,
+		)
+	}
+	// wait for initial target groups to be recieved
+	wg.Wait()
 
-			u, err := url.Parse(
-				fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath),
-			)
-			if err != nil {
-				log.WithError(err).Error("could not parse instance")
-				continue
-			}
+}
 
-			j.AddTargets(scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
-				Interval: time.Duration(sc.ScrapeInterval),
-				URL:      *u,
-				JobName:  scraper.JobName(sc.JobName),
-			}))
+func (pt *PathTargeter) discoverTargetGroups(
+	provider retrieval.TargetProvider,
+	jobKey string,
+	sc *pconfig.ScrapeConfig,
+	wg *sync.WaitGroup,
+	ch chan []*pconfig.TargetGroup,
+	ctx context.Context,
+	ll *log.Entry,
+) {
+	// Block until initial set of configuations is got
+	wg.Add(1)
+
+	go provider.Run(ctx, ch)
+
+	ll.Debug("waiting for initial discovery target groups")
+	select {
+	case chTgs := <-ch:
+		ll.WithField("key", jobKey).Debug("initial discovery target groups received")
+		pt.setJob(jobKey, chTgs, sc)
+
+	case <-ctx.Done():
+		return
+	}
+
+	wg.Done()
+
+	// Listen for updates and send new job list to out channel
+	for {
+		select {
+		case chTgs := <-ch:
+			ll.Debug("update discovery target groups received")
+
+			pt.setJob(jobKey, chTgs, sc)
+			pt.out <- pt.allJobs()
+
+			ll.Debug("update discovery jobs sent")
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfig) scraper.Job {
+	var (
+		ll = log.WithFields(log.Fields{
+			"path_targeter": "tgToJob",
+			"path":          pt.path,
+			"source":        tg.Source,
+		})
+		j = scraper.NewStaticJob(&scraper.StaticJobConfig{
+			JobName:   scraper.JobName(sc.JobName),
+			Targeters: []scraper.Targeter{},
+		})
+	)
+
+	ll.Debug("converting target groups")
+
+	for _, t := range tg.Targets {
+
+		labelAddr, ok := t[model.LabelName("__address__")]
+		if !ok {
+			ll.WithField("target", t.String()).Error("__address__ label key not found")
+			continue
 		}
 
+		inst := string(labelAddr)
+
+		u, err := url.Parse(
+			fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath),
+		)
+		ll.WithField("target_url", u).Debug("converting target")
+		if err != nil {
+			log.WithError(err).Error("could not parse instance")
+			continue
+		}
+
+		j.AddTargets(scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
+			Interval: time.Duration(sc.ScrapeInterval),
+			URL:      u,
+			JobName:  scraper.JobName(sc.JobName),
+		}))
 	}
 
 	return j
+}
+
+func (pt *PathTargeter) setJob(key string, tgs []*pconfig.TargetGroup, sc *pconfig.ScrapeConfig) {
+	ll := log.WithFields(log.Fields{
+		"path_targeter":      "setJob",
+		"path":               pt.path,
+		"target_group_count": len(tgs),
+	})
+
+	for _, tg := range tgs {
+		pt.mutex.Lock()
+		ll.WithFields(log.Fields{
+			"source":       tg.Source,
+			"target_count": len(tg.Targets),
+		}).Debug("converting targets")
+
+		jobKey := fmt.Sprintf("%s/%s", key, tg.Source)
+		pt.jobs[jobKey] = pt.tgToJob(tg, sc)
+		ll.WithFields(log.Fields{
+			"key":          jobKey,
+			"current_jobs": pt.jobs,
+		}).Debug("job set")
+
+		pt.mutex.Unlock()
+	}
+}
+
+func (pt *PathTargeter) allJobs() []scraper.Job {
+	var (
+		jobs = []scraper.Job{}
+		ll   = log.WithFields(log.Fields{
+			"path_targeter": "allJobs",
+			"path":          pt.path,
+		})
+	)
+
+	pt.mutex.Lock()
+
+	ll.WithField("current_jobs", pt.jobs).Debug("preparing job slice from current jobs")
+	for _, job := range pt.jobs {
+		jobs = append(jobs, job)
+	}
+	ll.WithFields(log.Fields{
+		"current_jobs": pt.jobs,
+		"job_slice":    jobs,
+	}).Debug("job slice prepared")
+
+	pt.mutex.Unlock()
+
+	return jobs
 }
 
 func (pt *PathTargeter) stop() {
