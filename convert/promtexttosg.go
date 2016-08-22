@@ -31,6 +31,21 @@ func PromTextToSG(in io.Reader) (bus.SampleGroup, error) {
 	return sg, nil
 }
 
+const (
+	labelType     = "__type__"
+	labelLE       = "le"
+	labelQuantile = "quantile"
+
+	suffixBucket = "_bucket"
+	suffixCount  = "_count"
+	suffixSum    = "_sum"
+
+	typeCounter   = "counter"
+	typeGauge     = "gauge"
+	typeHistogram = "histogram"
+	typeSummary   = "summary"
+)
+
 func familyToSampleGroup(metricFamilies []*dto.MetricFamily) bus.SampleGroup {
 	samples := bus.SampleGroup{}
 	for _, mf := range metricFamilies {
@@ -42,105 +57,136 @@ func familyToSampleGroup(metricFamilies []*dto.MetricFamily) bus.SampleGroup {
 			for _, label := range prom.GetLabel() {
 				m.Labels[label.GetName()] = label.GetValue()
 			}
+
 			switch mf.GetType() {
 			case dto.MetricType_COUNTER:
-				s := bus.Sample{
-					Metric: m,
-					Datapoint: bus.Datapoint{
-						Value:     prom.Counter.GetValue(),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				s.Metric.Labels["__type__"] = "counter"
-				samples = append(samples, &s)
+				samples = append(samples, newCounterSample(prom, m))
 			case dto.MetricType_GAUGE:
-				s := bus.Sample{
-					Metric: m,
-					Datapoint: bus.Datapoint{
-						Value:     prom.Gauge.GetValue(),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				s.Metric.Labels["__type__"] = "gauge"
-				samples = append(samples, &s)
+				samples = append(samples, newGaugeSample(prom, m))
 			case dto.MetricType_HISTOGRAM:
-				// add bucket values, sum, and count for this prometheus metric
-				m.Labels["__type__"] = "histogram"
-				bucketName := m.Name + "_bucket"
-				for _, b := range prom.Histogram.Bucket {
-					myMetric := cloneMetric(m)
-					myMetric.Name = bucketName
-					myMetric.Labels["le"] = fmt.Sprint(b.GetUpperBound())
-					s := bus.Sample{
-						Metric: myMetric,
-						Datapoint: bus.Datapoint{
-							Value:     float64(b.GetCumulativeCount()),
-							Timestamp: promTimestamp(prom),
-						},
-					}
-					samples = append(samples, &s)
-				}
-				// do sum
-				sum := cloneMetric(m)
-				sum.Name = sum.Name + "_sum"
-				s := bus.Sample{
-					Metric: sum,
-					Datapoint: bus.Datapoint{
-						Value:     float64(*prom.Histogram.SampleSum),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				samples = append(samples, &s)
-				// do count
-				count := cloneMetric(m)
-				count.Name = count.Name + "_count"
-				s = bus.Sample{
-					Metric: count,
-					Datapoint: bus.Datapoint{
-						Value:     float64(*prom.Histogram.SampleCount),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				samples = append(samples, &s)
+				samples = collectHistogramSamples(samples, prom, m)
 			case dto.MetricType_SUMMARY:
-				m.Labels["__type__"] = "summary"
-				for _, q := range prom.Summary.Quantile {
-					myMetric := cloneMetric(m)
-					myMetric.Labels["quantile"] = fmt.Sprint(q.GetQuantile())
-					s := bus.Sample{
-						Metric: myMetric,
-						Datapoint: bus.Datapoint{
-							Value:     float64(q.GetValue()),
-							Timestamp: promTimestamp(prom),
-						},
-					}
-					samples = append(samples, &s)
-				}
-				// do sum
-				sum := cloneMetric(m)
-				sum.Name = sum.Name + "_sum"
-				s := bus.Sample{
-					Metric: sum,
-					Datapoint: bus.Datapoint{
-						Value:     float64(*prom.Summary.SampleSum),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				samples = append(samples, &s)
-				// do count
-				count := cloneMetric(m)
-				count.Name = count.Name + "_count"
-				s = bus.Sample{
-					Metric: count,
-					Datapoint: bus.Datapoint{
-						Value:     float64(*prom.Summary.SampleCount),
-						Timestamp: promTimestamp(prom),
-					},
-				}
-				samples = append(samples, &s)
+				samples = collectSummarySamples(samples, prom, m)
 			}
 		}
 	}
+
+	return samples
+}
+
+func newCounterSample(prom *dto.Metric, m bus.Metric) *bus.Sample {
+	s := bus.Sample{
+		Metric: m,
+		Datapoint: bus.Datapoint{
+			Value:     prom.Counter.GetValue(),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	s.Metric.Labels[labelType] = typeCounter
+
+	return &s
+}
+
+func newGaugeSample(prom *dto.Metric, m bus.Metric) *bus.Sample {
+	s := bus.Sample{
+		Metric: m,
+		Datapoint: bus.Datapoint{
+			Value:     prom.Gauge.GetValue(),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	s.Metric.Labels[labelType] = typeGauge
+
+	return &s
+}
+
+func collectHistogramSamples(samples bus.SampleGroup, prom *dto.Metric, m bus.Metric) bus.SampleGroup {
+	// add bucket values, sum, and count for this prometheus metric
+	m.Labels[labelType] = typeHistogram
+	bucketName := m.Name + suffixBucket
+
+	for _, b := range prom.Histogram.Bucket {
+		myMetric := cloneMetric(m)
+		myMetric.Name = bucketName
+		myMetric.Labels[labelLE] = fmt.Sprint(b.GetUpperBound())
+
+		s := bus.Sample{
+			Metric: myMetric,
+			Datapoint: bus.Datapoint{
+				Value:     float64(b.GetCumulativeCount()),
+				Timestamp: promTimestamp(prom),
+			},
+		}
+		samples = append(samples, &s)
+	}
+
+	// do sum
+	sum := cloneMetric(m)
+	sum.Name = sum.Name + suffixSum
+	s := bus.Sample{
+		Metric: sum,
+		Datapoint: bus.Datapoint{
+			Value:     float64(*prom.Histogram.SampleSum),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	samples = append(samples, &s)
+
+	// do count
+	count := cloneMetric(m)
+	count.Name = count.Name + suffixCount
+	s = bus.Sample{
+		Metric: count,
+		Datapoint: bus.Datapoint{
+			Value:     float64(*prom.Histogram.SampleCount),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	samples = append(samples, &s)
+
+	return samples
+}
+
+func collectSummarySamples(samples bus.SampleGroup, prom *dto.Metric, m bus.Metric) bus.SampleGroup {
+	m.Labels[labelType] = typeSummary
+
+	for _, q := range prom.Summary.Quantile {
+		myMetric := cloneMetric(m)
+		myMetric.Labels[labelQuantile] = fmt.Sprint(q.GetQuantile())
+		s := bus.Sample{
+			Metric: myMetric,
+			Datapoint: bus.Datapoint{
+				Value:     float64(q.GetValue()),
+				Timestamp: promTimestamp(prom),
+			},
+		}
+		samples = append(samples, &s)
+	}
+
+	// do sum
+	sum := cloneMetric(m)
+	sum.Name = sum.Name + suffixSum
+	s := bus.Sample{
+		Metric: sum,
+		Datapoint: bus.Datapoint{
+			Value:     float64(*prom.Summary.SampleSum),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	samples = append(samples, &s)
+
+	// do count
+	count := cloneMetric(m)
+	count.Name = count.Name + suffixCount
+	s = bus.Sample{
+		Metric: count,
+		Datapoint: bus.Datapoint{
+			Value:     float64(*prom.Summary.SampleCount),
+			Timestamp: promTimestamp(prom),
+		},
+	}
+	samples = append(samples, &s)
+
 	return samples
 }
 
