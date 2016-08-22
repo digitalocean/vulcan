@@ -61,33 +61,31 @@ func (cht *ConsistentHashTargeter) run() {
 
 	for {
 		select {
+
 		case nextPool := <-cht.pool:
-			ll.Debugf(
-				"pool update received; current targets: %v; new pool targets: %v",
-				cht.curTargets,
-				nextPool,
-			)
+			ll.WithFields(log.Fields{
+				"current_targets": cht.curTargets,
+				"new_pool":        nextPool,
+			}).Debug("pool update received")
 
 			cht.mu.Lock()
 
 			cht.curPool = nextPool
-			hashedTargests := cht.hashTargets(cht.curTargets)
-			cht.out <- hashedTargests
+			hashedTargets := cht.hashTargets(cht.curTargets)
+			cht.out <- hashedTargets
 
 			cht.mu.Unlock()
-			ll.Debugf(
-				"pool updated; current pool: %v; hashed targets: %v",
-				cht.curPool,
-				hashedTargests,
-			)
+			ll.WithFields(log.Fields{
+				"current_pool":    cht.curPool,
+				"current_targets": hashedTargets,
+			}).Debug("targets updated;")
 
 		case nextTargets := <-cht.targets:
-			ll.Debugf(
-				"target update received; current pool: %v; current targets: %v; new targets: %v",
-				cht.curPool,
-				cht.curTargets,
-				nextTargets,
-			)
+			ll.WithFields(log.Fields{
+				"current_targets": cht.curTargets,
+				"current_pool":    cht.curPool,
+				"new_targets":     nextTargets,
+			}).Debug("target update received")
 
 			cht.mu.Lock()
 
@@ -95,7 +93,7 @@ func (cht *ConsistentHashTargeter) run() {
 			cht.out <- hashedTargets
 
 			cht.mu.Unlock()
-			ll.Debugf("targets updated; hashed targets: %v", hashedTargets)
+			ll.WithField("current_targets", hashedTargets).Debug("targets updated")
 		}
 	}
 }

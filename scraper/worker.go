@@ -40,9 +40,12 @@ type WorkerConfig struct {
 }
 
 func (w *Worker) run() {
-	splay := time.Duration(rand.Int63n(int64(w.Target.Interval()))) // TODO make this a consistent splay based off of metric name
-	ticker := newSplayTicker(splay, w.Target.Interval())
-	nowch := ticker.C()
+	var (
+		splay  = time.Duration(rand.Int63n(int64(w.Target.Interval()))) // TODO make this a consistent splay based off of metric name
+		ticker = newSplayTicker(splay, w.Target.Interval())
+		nowch  = ticker.C()
+		ll     = log.WithField("worker", w.key)
+	)
 	defer ticker.Stop()
 
 	for {
@@ -50,23 +53,19 @@ func (w *Worker) run() {
 		case <-w.done:
 			return
 		case <-nowch:
-			log.WithField("worker", w.key).Debugf("fetching target")
+			ll.Debug("fetching target")
 			fams, err := w.Target.Fetch()
 			if err != nil {
 				continue // keep trying
 			}
 
-			log.WithField("worker", w.key).Debugf("writing metric")
+			ll.Debug("writing metric")
 			if err = w.writer.Write(w.key, fams); err != nil {
-				log.WithError(
-					err,
-				).WithField("worker", w.key).Error("first write failed. Retrying after 1s..")
+				ll.WithError(err).Error("first write failed. Retrying after 1s..")
 				time.Sleep(1 * time.Second)
 
 				if err = w.writer.Write(w.key, fams); err != nil {
-					log.WithError(
-						err,
-					).WithField("worker", w.key).Error("could not write metric")
+					ll.WithError(err).Error("could not write metric")
 				}
 			}
 		}
