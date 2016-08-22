@@ -197,7 +197,7 @@ func (pt *PathTargeter) discoverTargetGroups(
 	ll.Debug("waiting for initial discovery target groups")
 	select {
 	case chTgs := <-ch:
-		ll.WithField("key", jobKey).Debug("initial discovery target groups received")
+		ll.WithField("root_key", jobKey).Debug("initial discovery target groups received")
 		pt.setJob(jobKey, chTgs, sc)
 
 	case <-ctx.Done():
@@ -210,7 +210,10 @@ func (pt *PathTargeter) discoverTargetGroups(
 	for {
 		select {
 		case chTgs := <-ch:
-			ll.Debug("update discovery target groups received")
+			ll.WithFields(log.Fields{
+				"root_key":         jobKey,
+				"new_targetgroups": chTgs,
+			}).Debug("update discovery target groups received")
 
 			pt.setJob(jobKey, chTgs, sc)
 			pt.out <- pt.allJobs()
@@ -271,20 +274,26 @@ func (pt *PathTargeter) setJob(key string, tgs []*pconfig.TargetGroup, sc *pconf
 	ll := log.WithFields(log.Fields{
 		"path_targeter":      "setJob",
 		"path":               pt.path,
+		"root_key":           key,
 		"target_group_count": len(tgs),
 	})
 
 	for _, tg := range tgs {
+		if tg == nil {
+			ll.Error("got nil target group")
+			continue
+		}
+
 		pt.mutex.Lock()
 		ll.WithFields(log.Fields{
-			"source":       tg.Source,
-			"target_count": len(tg.Targets),
+			"source":  tg.Source,
+			"targets": tg.Targets,
 		}).Debug("converting targets")
 
 		jobKey := fmt.Sprintf("%s/%s", key, tg.Source)
 		pt.jobs[jobKey] = pt.tgToJob(tg, sc)
 		ll.WithFields(log.Fields{
-			"key":          jobKey,
+			"job_key":      jobKey,
 			"current_jobs": pt.jobs,
 		}).Debug("job set")
 
