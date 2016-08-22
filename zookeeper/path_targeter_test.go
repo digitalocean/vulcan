@@ -218,10 +218,10 @@ func TestK8Jobs(t *testing.T) {
 						Source: fmt.Sprintf("test-%d", i),
 						Targets: []model.LabelSet{
 							model.LabelSet{
-								"__address__": "foobar.digitalocean.com",
+								"__address__": "foobar.example.com",
 							},
 							model.LabelSet{
-								"__address__": "barfoo.digitalocean.com",
+								"__address__": "barfoo.example.com",
 							},
 						},
 					},
@@ -280,10 +280,10 @@ func TestK8Jobs(t *testing.T) {
 					Source: fmt.Sprintf("test-0"),
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.digitalocean.com",
+							"__address__": "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.digitalocean.com",
+							"__address__": "barfoo.example.com",
 						},
 					},
 				},
@@ -318,7 +318,7 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar.digitalocean.com",
+						"__address__": "foobar.example.com",
 					},
 				},
 			},
@@ -329,7 +329,7 @@ func TestTgToJob(t *testing.T) {
 				MetricsPath:    "/metrics",
 			},
 			expectedTargeterKeys: []string{
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.example.com", Path: "/metrics", Scheme: "http"}),
 			},
 		},
 		{
@@ -338,10 +338,10 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar.digitalocean.com",
+						"__address__": "foobar.example.com",
 					},
 					model.LabelSet{
-						"__address__": "barfoo.digitalocean.com",
+						"__address__": "barfoo.example.com",
 					},
 				},
 			},
@@ -352,8 +352,8 @@ func TestTgToJob(t *testing.T) {
 				MetricsPath:    "/metrics",
 			},
 			expectedTargeterKeys: []string{
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "barfoo.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "barfoo.example.com", Path: "/metrics", Scheme: "http"}),
 			},
 		},
 		{
@@ -362,34 +362,34 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar0.digitalocean.com",
+						"__address__": "foobar0.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar1.digitalocean.com",
+						"__address__": "foobar1.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar2.digitalocean.com",
+						"__address__": "foobar2.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar3.digitalocean.com",
+						"__address__": "foobar3.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar4.digitalocean.com",
+						"__address__": "foobar4.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar5.digitalocean.com",
+						"__address__": "foobar5.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar6.digitalocean.com",
+						"__address__": "foobar6.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar7.digitalocean.com",
+						"__address__": "foobar7.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar8.digitalocean.com",
+						"__address__": "foobar8.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar9.digitalocean.com",
+						"__address__": "foobar9.example.com",
 					},
 				},
 			},
@@ -400,16 +400,16 @@ func TestTgToJob(t *testing.T) {
 				MetricsPath:    "/metrics",
 			},
 			expectedTargeterKeys: []string{
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar0.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar1.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar2.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar3.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar4.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar5.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar6.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar7.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar8.digitalocean.com", Path: "/metrics", Scheme: "http"}),
-				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar9.digitalocean.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar0.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar1.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar2.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar3.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar4.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar5.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar6.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar7.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar8.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar9.example.com", Path: "/metrics", Scheme: "http"}),
 			},
 		},
 		{
@@ -418,34 +418,34 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__a__": "foobar0.digitalocean.com",
+						"__a__": "foobar0.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar1.digitalocean.com",
+						"__a__": "foobar1.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar2.digitalocean.com",
+						"__a__": "foobar2.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar3.digitalocean.com",
+						"__a__": "foobar3.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar4.digitalocean.com",
+						"__a__": "foobar4.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar5.digitalocean.com",
+						"__a__": "foobar5.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar6.digitalocean.com",
+						"__a__": "foobar6.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar7.digitalocean.com",
+						"__a__": "foobar7.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar8.digitalocean.com",
+						"__a__": "foobar8.example.com",
 					},
 					model.LabelSet{
-						"__a__": "foobar9.digitalocean.com",
+						"__a__": "foobar9.example.com",
 					},
 				},
 			},
@@ -514,7 +514,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -525,7 +525,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -539,11 +539,11 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -554,11 +554,11 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -572,7 +572,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -581,7 +581,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -592,7 +592,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -601,7 +601,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -616,7 +616,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -625,7 +625,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo0.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo0.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -634,7 +634,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo1.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo1.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -643,7 +643,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo2.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo2.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -652,7 +652,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo3.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo3.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -661,7 +661,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo4.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo4.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -670,7 +670,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo5.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo5.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -679,7 +679,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo6.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo6.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -688,7 +688,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo7.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo7.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -697,7 +697,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo8.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo8.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -708,7 +708,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -717,7 +717,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo0.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo0.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -726,7 +726,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo1.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo1.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -735,7 +735,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo2.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo2.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -744,7 +744,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo3.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo3.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -753,7 +753,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo4.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo4.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -762,7 +762,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo5.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo5.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -771,7 +771,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo6.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo6.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -780,7 +780,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo7.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo7.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -789,7 +789,7 @@ func TestAllJobs(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "foo",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo8.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo8.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -839,10 +839,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.digitalocean.com",
+							"__address__": "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.digitalocean.com",
+							"__address__": "barfoo.example.com",
 						},
 					},
 				},
@@ -859,11 +859,11 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -877,10 +877,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.digitalocean.com",
+							"__address__": "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.digitalocean.com",
+							"__address__": "barfoo.example.com",
 						},
 					},
 				},
@@ -896,7 +896,7 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -907,11 +907,11 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -925,10 +925,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.digitalocean.com",
+							"__address__": "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.digitalocean.com",
+							"__address__": "barfoo.example.com",
 						},
 					},
 				},
@@ -936,10 +936,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test2",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.oceandigital.com",
+							"__address__": "foobar.oceandigital.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.oceandigital.com",
+							"__address__": "barfoo.oceandigital.example.com",
 						},
 					},
 				},
@@ -955,7 +955,7 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -964,7 +964,7 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "sammy.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "sammy.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -975,11 +975,11 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -988,11 +988,11 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "foobar.oceandigital.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "foobar.oceandigital.example.com", Path: "/metrics"},
 						}),
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "barfoo.oceandigital.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "barfoo.oceandigital.example.com", Path: "/metrics"},
 						}),
 					},
 				}),
@@ -1001,7 +1001,7 @@ func TestSetJob(t *testing.T) {
 					Targeters: []scraper.Targeter{
 						scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 							JobName: "testjob1",
-							URL:     &url.URL{Scheme: "http", Host: "sammy.digitalocean.com", Path: "/metrics"},
+							URL:     &url.URL{Scheme: "http", Host: "sammy.example.com", Path: "/metrics"},
 						}),
 					},
 				}),

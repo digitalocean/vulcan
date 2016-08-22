@@ -17,23 +17,23 @@ func TestScraperStaticJobSet(t *testing.T) {
 			param: []Targeter{
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "foobar.digitalocean.com",
+					key: "foobar.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "barfoo.digitalocean.com",
+					key: "barfoo.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "raboof.digitalocean.com",
+					key: "raboof.example.com",
 				},
 			},
 		},
 		{
 			desc: "no matching running jobs",
 			runningJobs: map[string]*Worker{
-				"barfoo.digitalocean.com": &Worker{
-					key: "barfoo.digitalocean.com",
+				"barfoo.example.com": &Worker{
+					key: "barfoo.example.com",
 					Target: &MockTargeter{
 						i: time.Duration(30) * time.Second,
 					},
@@ -44,22 +44,22 @@ func TestScraperStaticJobSet(t *testing.T) {
 			param: []Targeter{
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "foobar.digitalocean.com",
+					key: "foobar.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "raboof.digitalocean.com",
+					key: "raboof.example.com",
 				},
 			},
 		},
 		{
 			desc: "all matching running jobs",
 			runningJobs: map[string]*Worker{
-				"foobar.digitalocean.com": &Worker{
-					key: "foobar.digitalocean.com",
+				"foobar.example.com": &Worker{
+					key: "foobar.example.com",
 					Target: &MockTargeter{
 						i:   time.Duration(30) * time.Second,
-						key: "foobar.digitalocean.com",
+						key: "foobar.example.com",
 					},
 					writer: &MockWriter{},
 					done:   make(chan struct{}),
@@ -68,36 +68,36 @@ func TestScraperStaticJobSet(t *testing.T) {
 			param: []Targeter{
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "foobar.digitalocean.com",
+					key: "foobar.example.com",
 				},
 			},
 		},
 		{
 			desc: "some matching running jobs",
 			runningJobs: map[string]*Worker{
-				"foobar.digitalocean.com": &Worker{
-					key: "foobar.digitalocean.com",
+				"foobar.example.com": &Worker{
+					key: "foobar.example.com",
 					Target: &MockTargeter{
 						i:   time.Duration(30) * time.Second,
-						key: "foobar.digitalocean.com",
+						key: "foobar.example.com",
 					},
 					writer: &MockWriter{},
 					done:   make(chan struct{}),
 				},
-				"barfoo.digitalocean.com": &Worker{
-					key: "barfoo.digitalocean.com",
+				"barfoo.example.com": &Worker{
+					key: "barfoo.example.com",
 					Target: &MockTargeter{
 						i:   time.Duration(30) * time.Second,
-						key: "barfoo.digitalocean.com",
+						key: "barfoo.example.com",
 					},
 					writer: &MockWriter{},
 					done:   make(chan struct{}),
 				},
-				"baroof.digitalocean.com": &Worker{
-					key: "baroof.digitalocean.com",
+				"baroof.example.com": &Worker{
+					key: "baroof.example.com",
 					Target: &MockTargeter{
 						i:   time.Duration(30) * time.Second,
-						key: "baroof.digitalocean.com",
+						key: "baroof.example.com",
 					},
 					writer: &MockWriter{},
 					done:   make(chan struct{}),
@@ -106,19 +106,19 @@ func TestScraperStaticJobSet(t *testing.T) {
 			param: []Targeter{
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "foobar.digitalocean.com",
+					key: "foobar.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "oofrab.digitalocean.com",
+					key: "oofrab.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "raboof.digitalocean.com",
+					key: "raboof.example.com",
 				},
 				&MockTargeter{
 					i:   time.Duration(30) * time.Second,
-					key: "baroof.digitalocean.com",
+					key: "baroof.example.com",
 				},
 			},
 		},
@@ -179,11 +179,11 @@ func TestScraperStaticJobSet(t *testing.T) {
 		{
 			desc: "no targets, existing running workers",
 			runningJobs: map[string]*Worker{
-				"barfoo.digitalocean.com": &Worker{
-					key: "barfoo.digitalocean.com",
+				"barfoo.example.com": &Worker{
+					key: "barfoo.example.com",
 					Target: &MockTargeter{
 						i:   time.Duration(30) * time.Second,
-						key: "barfoo.digitalocean.com",
+						key: "barfoo.example.com",
 					},
 					writer: &MockWriter{},
 					done:   make(chan struct{}),

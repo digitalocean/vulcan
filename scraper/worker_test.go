@@ -33,7 +33,7 @@ func TestWorkerRun(t *testing.T) {
 		t.Logf("run validations %d: %q", i, test.desc)
 
 		w := &Worker{
-			key: "test.digitalocean.com",
+			key: "test.example.com",
 			Target: &MockTargeter{
 				i:                 time.Duration(30) * time.Second,
 				fetchErr:          test.targetErr,

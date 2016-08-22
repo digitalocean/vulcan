@@ -95,7 +95,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.localhost:9101
-        - %s.digitalocean.com:8888
+        - %s.example.com:8888
 `,
 				chPath,
 				chPath,
@@ -105,7 +105,7 @@ scrape_configs:
 			expectedTargets = append(
 				expectedTargets,
 				fmt.Sprintf("%s.localhost:9101", chPath),
-				fmt.Sprintf("%s.digitalocean.com:8888", chPath),
+				fmt.Sprintf("%s.example.com:8888", chPath),
 			)
 		}
 
@@ -139,7 +139,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.hostlocal:9101
-        - %s.sammyshark.com:8888
+        - %s.sammyshark.example.com:8888
 `,
 				chPath,
 				chPath,
@@ -149,7 +149,7 @@ scrape_configs:
 			expectedTargets = append(
 				expectedTargets,
 				fmt.Sprintf("%s.hostlocal:9101", chPath),
-				fmt.Sprintf("%s.sammyshark.com:8888", chPath),
+				fmt.Sprintf("%s.sammyshark.example.com:8888", chPath),
 			)
 		}
 		// Send job update event
@@ -192,7 +192,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.localhost:9101
-        - %s.digitalocean.com:8888
+        - %s.example.com:8888
 `,
 				chPath,
 				chPath,
@@ -202,7 +202,7 @@ scrape_configs:
 			expectedTargets = append(
 				expectedTargets,
 				fmt.Sprintf("%s.localhost:9101", chPath),
-				fmt.Sprintf("%s.digitalocean.com:8888", chPath),
+				fmt.Sprintf("%s.example.com:8888", chPath),
 			)
 		}
 
@@ -237,7 +237,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.hostlocal:9101
-        - %s.sammyshark.com:8888
+        - %s.sammyshark.example.com:8888
 `,
 				chPath,
 				chPath,
@@ -247,7 +247,7 @@ scrape_configs:
 			expectedTargets = append(
 				expectedTargets,
 				fmt.Sprintf("%s.hostlocal:9101", chPath),
-				fmt.Sprintf("%s.sammyshark.com:8888", chPath),
+				fmt.Sprintf("%s.sammyshark.example.com:8888", chPath),
 			)
 		}
 		// Send job update event and validate new results
@@ -306,7 +306,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.localhost:9101
-        - %s.digitalocean.com:8888
+        - %s.example.com:8888
 `,
 				chPath,
 				chPath,
@@ -418,7 +418,7 @@ scrape_configs:
     static_configs:
       - targets:
         - %s.localhost:9101
-        - %s.digitalocean.com:8888
+        - %s.example.com:8888
 `,
 				chPath,
 				chPath,
