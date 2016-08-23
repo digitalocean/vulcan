@@ -39,9 +39,11 @@ type Match struct {
 	Value string
 }
 
-// Resolver is a interface that wraps the Resolve method.
+// Resolver is a interface that wraps a database that can answer questions
+// on what metrics exist.
 type Resolver interface {
 	// Resolve makes a query using the provided key value pairs of query
 	// params and transforms the results to Vulcan Metric type.
 	Resolve([]*Match) ([]*bus.Metric, error)
+	Values(field string) ([]string, error)
 }

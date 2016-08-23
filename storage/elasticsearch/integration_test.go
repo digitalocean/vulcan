@@ -182,7 +182,7 @@ func upEntries() error {
 	return nil
 }
 
-func TestResolver(t *testing.T) {
+func TestResolve(t *testing.T) {
 	err := down()
 	if err != nil {
 		t.Error(err)
@@ -322,6 +322,47 @@ func TestResolver(t *testing.T) {
 		}
 		if len(m) != test.Count {
 			t.Errorf("want %d resolved metrics got %d", test.Count, len(m))
+		}
+	}
+}
+
+func TestValues(t *testing.T) {
+	err := down()
+	if err != nil {
+		t.Error(err)
+	}
+	err = up()
+	if err != nil {
+		t.Error(err)
+	}
+	r, err := elasticsearch.NewResolver(&elasticsearch.ResolverConfig{
+		URL:   *es,
+		Sniff: false,
+		Index: "vulcan-integration",
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	tests := []struct {
+		Field  string
+		Values []string
+	}{
+		{
+			Field:  "__name__",
+			Values: []string{"metric_1"},
+		},
+		{
+			Field:  "l",
+			Values: []string{"value-one", "value-two", "value-three"},
+		},
+	}
+	for _, test := range tests {
+		res, err := r.Values(test.Field)
+		if err != nil {
+			t.Error(err)
+		}
+		if len(res) != len(test.Values) {
+			t.Errorf("expected %d value for %s values but got %d", len(test.Values), test.Field, len(res))
 		}
 	}
 }

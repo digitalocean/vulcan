@@ -17,6 +17,7 @@ package elasticsearch
 import (
 	"fmt"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
 	"github.com/digitalocean/vulcan/storage"
@@ -51,7 +52,7 @@ func NewResolver(config *ResolverConfig) (*Resolver, error) {
 }
 
 // Resolve implements the storage.Resolver interface.
-func (mr *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
+func (r *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 	q := elastic.NewBoolQuery()
 	for _, m := range matches {
 		switch m.Type {
@@ -67,8 +68,8 @@ func (mr *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 			return []*bus.Metric{}, fmt.Errorf("unhandled match type")
 		}
 	}
-	sr, err := mr.client.Search().
-		Index(mr.index).
+	sr, err := r.client.Search().
+		Index(r.index).
 		NoFields().         // only want the _id
 		Sort("_doc", true). // sort by _doc since it is most efficient to return large results https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-sort.html
 		Query(q).
@@ -86,4 +87,37 @@ func (mr *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 		ml = append(ml, m)
 	}
 	return ml, nil
+}
+
+// Values returns the unique values for a given metric field. This allows
+// vulcan to provide hinting on what metrics exist or what label values
+// a query should use in a filter.
+func (r *Resolver) Values(field string) ([]string, error) {
+	aggr := elastic.NewTermsAggregation().
+		Field(fmt.Sprintf("%s.raw", convert.ESEscape(field))).
+		Size(10000) // arbitrarily large
+	res, err := r.client.Search().
+		Index(r.index).
+		Query(elastic.NewMatchAllQuery()).
+		SearchType("count").
+		Aggregation("label_values", aggr).
+		Do()
+	if err != nil {
+		return []string{}, err
+	}
+	itms, found := res.Aggregations.Terms("label_values")
+	if !found {
+		return []string{}, nil
+	}
+	values := []string{}
+	for _, bucket := range itms.Buckets {
+		if key, ok := bucket.Key.(string); ok {
+			values = append(values, key)
+			continue
+		}
+		log.WithFields(log.Fields{
+			"field": field,
+		}).Warning("unable to cast result bucket key to string")
+	}
+	return values, nil
 }
