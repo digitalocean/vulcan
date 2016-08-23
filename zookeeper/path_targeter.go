@@ -16,7 +16,10 @@ package zookeeper
 
 import (
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +30,7 @@ import (
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/util/httputil"
 	"golang.org/x/net/context"
 )
 
@@ -171,7 +175,7 @@ func (pt *PathTargeter) k8Jobs(
 	)
 
 	for i, config := range sc.KubernetesSDConfigs {
-		ll = ll.WithField("config", *config)
+		ll = ll.WithField("kubernetes_config", *config)
 		ll.Debug("processing k8 config")
 
 		kd, err := providerFn(config)
@@ -251,26 +255,35 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 			JobName:   scraper.JobName(sc.JobName),
 			Targeters: []scraper.Targeter{},
 		})
+		err error
 	)
 
 	ll.Debug("converting target groups")
-
 	for _, t := range tg.Targets {
+		t = pt.applyDefaultLabels(t, tg.Labels, sc)
 
-		labelAddr, ok := t[model.LabelName("__address__")]
-		if !ok {
-			ll.WithField("target", t.String()).Error("__address__ label key not found")
+		if len(sc.RelabelConfigs) > 0 && sc.RelabelConfigs[0] != nil {
+			ll.Debug("relabel configs received")
+
+			t, err = retrieval.Relabel(t, sc.RelabelConfigs...)
+			if err != nil {
+				ll.WithError(err).Error("could not relabel")
+				continue
+			}
+			ll.WithField("labels", t).Warn("relabelled configs")
+		}
+
+		u, err := pt.getTargetURL(t, sc.MetricsPath, sc.Params)
+		if err != nil {
+			ll.WithError(err).Error("target invaldated")
 			continue
 		}
 
-		inst := string(labelAddr)
-
-		u, err := url.Parse(
-			fmt.Sprintf("%s://%s%s", sc.Scheme, inst, sc.MetricsPath),
-		)
 		ll.WithField("target_url", u).Debug("converting target")
+
+		client, err := newHTTPClient(sc)
 		if err != nil {
-			log.WithError(err).Error("could not parse instance")
+			ll.WithError(err).Error("could create http client for target")
 			continue
 		}
 
@@ -278,10 +291,91 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 			Interval: time.Duration(sc.ScrapeInterval),
 			URL:      u,
 			JobName:  scraper.JobName(sc.JobName),
+			Client:   client,
 		}))
 	}
 
 	return j
+}
+
+func (pt *PathTargeter) applyDefaultLabels(
+	target model.LabelSet,
+	tgLabels model.LabelSet,
+	sc *pconfig.ScrapeConfig,
+) model.LabelSet {
+	// initial labels, will be overwritten by higher priority labels
+	iLabels := model.LabelSet{
+		model.SchemeLabel:      model.LabelValue(sc.Scheme),
+		model.MetricsPathLabel: model.LabelValue(sc.MetricsPath),
+		model.JobLabel:         model.LabelValue(sc.JobName),
+	}
+
+	// labelize params in case in case needed for relabelling
+	for k, v := range sc.Params {
+		if len(v) > 0 {
+			iLabels[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+		}
+	}
+
+	// apply common target group labels
+	for k, v := range tgLabels {
+		iLabels[k] = v
+	}
+
+	// apply target labels
+	for k, v := range target {
+		iLabels[k] = v
+	}
+
+	return iLabels
+}
+
+func (pt *PathTargeter) getTargetURL(
+	target model.LabelSet,
+	defaultMetricsPath string,
+	params url.Values,
+) (*url.URL, error) {
+	var (
+		metricsPath string
+		scheme      string
+	)
+
+	host, ok := target[model.AddressLabel]
+	if !ok {
+		return nil, errors.New("__address__ label key not found")
+	}
+
+	if _, ok = target[model.MetricsPathLabel]; !ok {
+		metricsPath = defaultMetricsPath
+	} else {
+		metricsPath = string(target[model.MetricsPathLabel])
+	}
+
+	switch target[model.SchemeLabel] {
+	case "http", "":
+		scheme = "http"
+
+	case "https":
+		scheme = "https"
+
+	default:
+		return nil, errors.Errorf("invalid url scheme: %v", target[model.SchemeLabel])
+	}
+
+	// check for additional params
+	for k, v := range target {
+		if strings.HasPrefix(string(k), model.ParamLabelPrefix) {
+			// override original param if found in target labels
+			params[string(k[len(model.ParamLabelPrefix):])] = []string{string(v)}
+		}
+	}
+
+	return &url.URL{
+		Scheme:   scheme,
+		Host:     string(host),
+		Path:     metricsPath,
+		RawQuery: params.Encode(),
+	}, nil
 }
 
 func (pt *PathTargeter) setJob(key string, tgs []*pconfig.TargetGroup, sc *pconfig.ScrapeConfig) {
@@ -353,4 +447,52 @@ func (pt *PathTargeter) stop() {
 			}
 		}
 	})
+}
+
+// newHTTPClient returns a new http client.  Taken directly from prometheus.
+func newHTTPClient(sc *pconfig.ScrapeConfig) (*http.Client, error) {
+	tlsOpts := httputil.TLSOptions{
+		InsecureSkipVerify: sc.TLSConfig.InsecureSkipVerify,
+		CAFile:             sc.TLSConfig.CAFile,
+	}
+	if len(sc.TLSConfig.CertFile) > 0 && len(sc.TLSConfig.KeyFile) > 0 {
+		tlsOpts.CertFile = sc.TLSConfig.CertFile
+		tlsOpts.KeyFile = sc.TLSConfig.KeyFile
+	}
+	if len(sc.TLSConfig.ServerName) > 0 {
+		tlsOpts.ServerName = sc.TLSConfig.ServerName
+	}
+	tlsConfig, err := httputil.NewTLSConfig(tlsOpts)
+	if err != nil {
+		return nil, err
+	}
+	// The only timeout we care about is the configured scrape timeout.
+	// It is applied on request. So we leave out any timings here.
+	var rt http.RoundTripper = &http.Transport{
+		Proxy:             http.ProxyURL(sc.ProxyURL.URL),
+		DisableKeepAlives: true,
+		TLSClientConfig:   tlsConfig,
+	}
+
+	// If a bearer token is provided, create a round tripper that will set the
+	// Authorization header correctly on each request.
+	bearerToken := sc.BearerToken
+	if len(bearerToken) == 0 && len(sc.BearerTokenFile) > 0 {
+		b, err := ioutil.ReadFile(sc.BearerTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", sc.BearerTokenFile, err)
+		}
+		bearerToken = string(b)
+	}
+
+	if len(bearerToken) > 0 {
+		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
+	}
+
+	if sc.BasicAuth != nil {
+		rt = httputil.NewBasicAuthRoundTripper(sc.BasicAuth.Username, sc.BasicAuth.Password, rt)
+	}
+
+	// Return a new client with the configured round tripper.
+	return httputil.NewClient(rt), nil
 }
