@@ -22,30 +22,41 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	pconfig "github.com/prometheus/prometheus/config"
 )
+
+type fetcher interface {
+	fetch(u *url.URL) ([]*dto.MetricFamily, error)
+}
 
 // HTTPTarget represents an instance of an HTTP scraper target.
 type HTTPTarget struct {
 	u *url.URL
 	i time.Duration
 	j JobName
+	fetcher
 }
 
 // HTTPTargetConfig represents the configuration of an HTTPTarget.
 type HTTPTargetConfig struct {
-	Interval time.Duration
-	URL      *url.URL
-	JobName  JobName
+	Interval    time.Duration
+	URL         *url.URL
+	JobName     JobName
+	RelabelCfgs []*pconfig.RelabelConfig
+	Client      *http.Client
 }
 
 // NewHTTPTarget creates an instance of HTTPTarget.
+// TODO implement handling of relabel configs when supporting metric_relabel_configs
 func NewHTTPTarget(config *HTTPTargetConfig) *HTTPTarget {
 	return &HTTPTarget{
-		u: config.URL,
-		i: config.Interval,
-		j: config.JobName,
+		u:       config.URL,
+		i:       config.Interval,
+		j:       config.JobName,
+		fetcher: &defaultFetcher{client: config.Client},
 	}
 }
 
@@ -63,10 +74,11 @@ func (ht *HTTPTarget) Equals(other Targeter) bool {
 // a prometheus MetricFamily type.
 func (ht *HTTPTarget) Fetch() ([]*dto.MetricFamily, error) {
 	at := time.Now() // timestamp metrics with time scraper initiated
-	fam, err := ht.fetch()
+	fam, err := ht.fetch(ht.u)
 	if err != nil {
 		return fam, err
 	}
+
 	timestamp(fam, at)
 	return fam, nil
 }
@@ -96,20 +108,13 @@ func annotate(fams []*dto.MetricFamily, target Target) {
 	}
 }
 
-func (ht HTTPTarget) fetch() ([]*dto.MetricFamily, error) {
-	resp, err := http.Get(ht.u.String())
-	if err != nil {
-		return []*dto.MetricFamily{}, err
-	}
-	defer resp.Body.Close()
-	// TODO check return codes
-	return parse(resp.Body, resp.Header)
-}
-
 func parse(in io.Reader, header http.Header) ([]*dto.MetricFamily, error) {
-	dec := expfmt.NewDecoder(in, expfmt.Negotiate(header))
-	fams := []*dto.MetricFamily{}
-	var err error
+	var (
+		dec  = expfmt.NewDecoder(in, expfmt.Negotiate(header))
+		fams = []*dto.MetricFamily{}
+		err  error
+	)
+
 	for {
 		var f dto.MetricFamily
 		if err = dec.Decode(&f); err != nil {
@@ -135,4 +140,22 @@ func timestamp(fams []*dto.MetricFamily, at time.Time) {
 			}
 		}
 	}
+}
+
+type defaultFetcher struct {
+	client *http.Client
+}
+
+func (f *defaultFetcher) fetch(u *url.URL) ([]*dto.MetricFamily, error) {
+	resp, err := f.client.Get(u.String())
+	if err != nil {
+		return []*dto.MetricFamily{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("response status %s", resp.Status)
+	}
+
+	return parse(resp.Body, resp.Header)
 }
