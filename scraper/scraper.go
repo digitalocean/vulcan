@@ -61,8 +61,6 @@ func (s *Scraper) Run() {
 
 		case <-s.done:
 			return
-
-		default:
 		}
 	}
 }
