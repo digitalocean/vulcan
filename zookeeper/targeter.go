@@ -8,27 +8,39 @@ import (
 	"github.com/digitalocean/vulcan/scraper"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/pkg/errors"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
-// Targeter uses zookeeper as a backend for configuring jobs that vulcan should scrape.
-// The targeter watches the zookeeper path to react to new/changed/removed jobs.
-type Targeter struct {
-	conn Client
-	path string
+type chState struct {
+	pt      *PathTargeter
+	targets []scraper.Targeter
+}
 
-	children map[string]*PathTargeter
-	once     sync.Once
-	out      chan scraper.Job
+// Targeter uses zookeeper as a backend for configuring jobs that vulcan should
+// scrape. The targeter watches the zookeeper path to react to new/changed/removed
+// child nodes and their corresponding nodes.
+type Targeter struct {
+	conn     Client
+	path     string
+	children map[string]*chState
+
+	out  chan []scraper.Targeter
+	done chan struct{}
+
+	once  sync.Once
+	mutex *sync.Mutex
 }
 
 // NewTargeter returns a new instance of Targeter.
 func NewTargeter(config *TargeterConfig) (*Targeter, error) {
 	t := &Targeter{
-		conn: config.Conn,
-		path: path.Join(config.Root, "scraper", "jobs"),
-
-		children: map[string]*PathTargeter{},
-		out:      make(chan scraper.Job),
+		conn:     config.Conn,
+		path:     path.Join(config.Root, "scraper", "jobs"),
+		children: map[string]*chState{},
+		out:      make(chan []scraper.Targeter),
+		mutex:    new(sync.Mutex),
+		done:     make(chan struct{}),
 	}
 	go t.run()
 	return t, nil
@@ -42,51 +54,160 @@ type TargeterConfig struct {
 
 // Targets implements scraper.Targeter interface.
 // Returns a channel that feeds available jobs.
-func (t *Targeter) Targets() <-chan scraper.Job {
+func (t *Targeter) Targets() <-chan []scraper.Targeter {
 	return t.out
 }
 
 func (t *Targeter) run() {
 	defer close(t.out)
-	log.WithField("path", t.path).Info("reading jobs from zookeeper")
+
+	ll := log.WithFields(log.Fields{
+		"path":     t.path,
+		"targeter": "run",
+	})
+
 	for {
-		c, _, ech, err := t.conn.ChildrenW(t.path)
+		select {
+		case <-t.done:
+			return
+
+		default:
+		}
+
+		log.WithField("path", t.path).Info("reading child nodes from zookeeper")
+
+		ech, err := t.updateChildren()
 		if err != nil {
-			log.WithError(err).WithField("path", t.path).Error("unable to get list of jobs from zookeeper")
+			ll.WithError(err).Error("unable to get list of jobs from zookeeper")
+
 			time.Sleep(time.Second * 2) // TODO exponential backoff
 			continue
 		}
-		t.setChildren(c)
-		<-ech
-		log.WithFields(log.Fields{
-			"path":     t.path,
-			"num_jobs": len(c),
-		}).Info("set jobs list")
+
+		done := make(chan struct{})
+		for n, state := range t.children {
+			go t.listenForJobs(n, state, done)
+		}
+
+		ll.WithField("num_jobs", len(t.children)).Info("set jobs list")
+
+		select {
+		case <-ech:
+			ll.Debug("watch event received for ChildrenW")
+			close(done)
+
+		case <-t.done:
+			close(done)
+			return
+		}
 	}
 }
 
+func (t *Targeter) listenForJobs(childName string, state *chState, done <-chan struct{}) {
+	ll := log.WithFields(log.Fields{
+		"targeter": "listenForJobs",
+		"child":    childName,
+	})
+
+	for {
+		select {
+		case jobs := <-state.pt.Jobs():
+
+			ll.Debug("job update received")
+
+			var targets []scraper.Targeter
+			for _, job := range jobs {
+				targets = append(targets, job.GetTargets()...)
+			}
+			t.mutex.Lock()
+
+			t.children[childName].targets = targets
+			t.out <- t.allTargets()
+
+			t.mutex.Unlock()
+
+		case <-done:
+			return
+		}
+	}
+}
+
+func (t *Targeter) updateChildren() (<-chan zk.Event, error) {
+	c, _, ech, err := t.conn.ChildrenW(t.path)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get children from zookeeper")
+	}
+
+	t.setChildren(c)
+	t.out <- t.allTargets()
+	return ech, nil
+}
+
 func (t *Targeter) setChildren(cn []string) {
-	next := map[string]*PathTargeter{}
+	var (
+		next = make(map[string]*chState, len(cn))
+		wg   = new(sync.WaitGroup)
+	)
+
 	for _, c := range cn {
-		if pt, ok := t.children[c]; ok {
-			next[c] = pt
+		if st, ok := t.children[c]; ok {
+			next[c] = st
 			delete(t.children, c)
 			continue
 		}
+
+		wg.Add(1)
+
 		p := path.Join(t.path, c)
-		pt := NewPathTargeter(&PathTargeterConfig{
-			Conn: t.conn,
-			Path: p,
-		})
-		next[c] = pt
+
+		st := &chState{
+			pt: NewPathTargeter(&PathTargeterConfig{
+				Conn: t.conn,
+				Path: p,
+			}),
+		}
+
+		next[c] = st
+
 		go func() {
-			for j := range pt.Targets() {
-				t.out <- j
+			defer wg.Done()
+			jobs := <-st.pt.Jobs()
+			targets := []scraper.Targeter{}
+			for _, j := range jobs {
+				targets = append(targets, j.GetTargets()...)
 			}
+			st.targets = targets
 		}()
 	}
-	for _, pt := range t.children {
-		pt.stop()
+
+	wg.Wait()
+
+	for _, st := range t.children {
+		st.pt.stop()
 	}
+
+	t.mutex.Lock()
 	t.children = next
+	t.mutex.Unlock()
+}
+
+func (t *Targeter) allTargets() []scraper.Targeter {
+	var results []scraper.Targeter
+
+	for _, child := range t.children {
+		results = append(results, child.targets...)
+	}
+
+	return results
+}
+
+// Stop signals the targeter instance to stop running.
+func (t *Targeter) Stop() {
+	t.once.Do(func() {
+		close(t.done)
+	})
+}
+
+func targetersFrJob(j scraper.Job) []scraper.Targeter {
+	return nil
 }

@@ -9,9 +9,9 @@ import (
 // Scraper answers to a query on which targets are running and groups them
 // by job.
 type Scraper struct {
-	Targeter Targeter
+	Targeter TargetWatcher
 	Writer   Writer
-	running  map[JobName]map[Instance]*Worker
+	running  map[string]*Worker
 	done     chan struct{}
 	once     sync.Once
 }
@@ -19,7 +19,7 @@ type Scraper struct {
 // Config represents an instance of a scraper configuration.
 // It contains a Targeter interface and a Writer interface.
 type Config struct {
-	Targeter Targeter
+	Targeter TargetWatcher
 	Writer   Writer
 }
 
@@ -28,48 +28,59 @@ func NewScraper(config *Config) *Scraper {
 	return &Scraper{
 		Targeter: config.Targeter,
 		Writer:   config.Writer,
-		running:  map[JobName]map[Instance]*Worker{},
+		running:  map[string]*Worker{},
 		done:     make(chan struct{}),
 	}
 }
 
 // Run ranges over the Scraper's targets and does work on them.
-func (s *Scraper) Run() error {
-	for job := range s.Targeter.Targets() {
-		s.set(job)
-		log.WithField("job_name", job.JobName).WithField("target_count", len(job.Targets)).Info("scraping job")
+func (s *Scraper) Run() {
+	for {
+		select {
+		case target := <-s.Targeter.Targets():
+			s.set(target)
+
+			log.WithFields(log.Fields{
+				"scraper":      "run",
+				"target_count": len(target),
+			}).Info("scraping targets")
+
+		case <-s.done:
+			return
+
+		default:
+		}
 	}
-	return nil
 }
 
-func (s *Scraper) set(job Job) {
-	workers := s.running[job.JobName]
-	next := map[Instance]*Worker{}
-	for instance, target := range job.Targets {
-		worker, ok := workers[instance]
+func (s *Scraper) set(targets []Targeter) {
+	next := make(map[string]*Worker, len(targets))
+
+	for _, target := range targets {
+		worker, ok := s.running[target.Key()]
 		if !ok {
-			next[instance] = NewWorker(&WorkerConfig{
-				JobName:  job.JobName,
-				Instance: instance,
-				Target:   target,
-				Writer:   s.Writer,
+			next[target.Key()] = NewWorker(&WorkerConfig{
+				Key:    target.Key(),
+				Target: target,
+				Writer: s.Writer,
 			})
 			continue
 		}
+
 		if !worker.Target.Equals(target) {
 			worker.Retarget(target)
 		}
-		next[instance] = worker
-		delete(workers, instance)
+		// Set found worker to next map of workers and remove reference from
+		// existing running.
+		next[target.Key()] = worker
+		delete(s.running, target.Key())
 	}
-	for _, worker := range workers {
-		worker.Stop()
+	// Stop runnning jobs that are no longer active targets targets.
+	for _, w := range s.running {
+		w.Stop()
 	}
-	if len(next) == 0 {
-		delete(s.running, job.JobName)
-		return
-	}
-	s.running[job.JobName] = next
+
+	s.running = next
 }
 
 // Stop signals the Scraper instance to stop running.

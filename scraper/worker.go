@@ -4,27 +4,28 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // Worker represents an instance of a scraper worker.
 type Worker struct {
-	jobName  JobName
-	instance Instance
-	Target   Target
-	last     time.Time
-	writer   Writer
-	done     chan struct{}
-	once     sync.Once
+	// jobName JobName
+	key    string
+	Target Targeter
+	last   time.Time
+	writer Writer
+	done   chan struct{}
+	once   sync.Once
 }
 
 // NewWorker creates a new instance of a Worker.
 func NewWorker(config *WorkerConfig) *Worker {
 	w := &Worker{
-		jobName:  config.JobName,
-		instance: config.Instance,
-		Target:   config.Target,
-		writer:   config.Writer,
-		done:     make(chan struct{}),
+		key:    config.Key,
+		Target: config.Target,
+		writer: config.Writer,
+		done:   make(chan struct{}),
 	}
 	go w.run()
 	return w
@@ -32,37 +33,47 @@ func NewWorker(config *WorkerConfig) *Worker {
 
 // WorkerConfig respresents an instance of a Worker's configuration.
 type WorkerConfig struct {
-	JobName  JobName
-	Instance Instance
-	Target   Target
-	Writer   Writer
+	// JobName JobName
+	Key    string
+	Target Targeter
+	Writer Writer
 }
 
 func (w *Worker) run() {
-	splay := time.Duration(rand.Int63n(int64(w.Target.Interval()))) // TODO make this a consistent splay based off of metric name
-	ticker := newSplayTicker(splay, w.Target.Interval())
-	nowch := ticker.C()
+	var (
+		splay  = time.Duration(rand.Int63n(int64(w.Target.Interval()))) // TODO make this a consistent splay based off of metric name
+		ticker = newSplayTicker(splay, w.Target.Interval())
+		nowch  = ticker.C()
+		ll     = log.WithField("worker", w.key)
+	)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-w.done:
 			return
 		case <-nowch:
+			ll.Debug("fetching target")
 			fams, err := w.Target.Fetch()
 			if err != nil {
 				continue // keep trying
 			}
-			err = w.writer.Write(w.jobName, w.instance, fams)
-			if err != nil {
 
+			ll.Debug("writing metric")
+			if err = w.writer.Write(w.key, fams); err != nil {
+				ll.WithError(err).Error("first write failed. Retrying after 1s..")
+				time.Sleep(1 * time.Second)
+
+				if err = w.writer.Write(w.key, fams); err != nil {
+					ll.WithError(err).Error("could not write metric")
+				}
 			}
-
 		}
 	}
 }
 
 // Retarget sets the current Worker's target to the parameter t.
-func (w *Worker) Retarget(t Target) {
+func (w *Worker) Retarget(t Targeter) {
 	w.Target = t
 }
 

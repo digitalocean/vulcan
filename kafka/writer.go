@@ -2,9 +2,6 @@ package kafka
 
 import (
 	"bytes"
-	"fmt"
-
-	"github.com/digitalocean/vulcan/scraper"
 
 	"github.com/Shopify/sarama"
 	dto "github.com/prometheus/client_model/go"
@@ -41,7 +38,7 @@ type WriterConfig struct {
 }
 
 // Write sends metrics to the Kafka message bus.
-func (w *Writer) Write(job scraper.JobName, instance scraper.Instance, fams []*dto.MetricFamily) error {
+func (w *Writer) Write(key string, fams []*dto.MetricFamily) error {
 	buf := &bytes.Buffer{}
 	encoder := expfmt.NewEncoder(buf, expfmt.FmtText)
 	for _, f := range fams {
@@ -52,7 +49,6 @@ func (w *Writer) Write(job scraper.JobName, instance scraper.Instance, fams []*d
 	}
 	// set key to "${job}::${instance}" so that messages from the same job-instance consistently
 	// go to the same kafka partition
-	key := fmt.Sprintf(`%s::%s`, job, instance)
 	_, _, err := w.producer.SendMessage(&sarama.ProducerMessage{
 		Topic: w.topic,
 		Key:   sarama.StringEncoder(key),

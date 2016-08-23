@@ -15,14 +15,15 @@ const (
 
 // ZKConn represents a test version of a Zookeeper client connections.
 type ZKConn struct {
-	EventChannel chan zk.Event
-	Stat         *zk.Stat
-	GetErr       error
-	ChildrenWErr error
-	CreateErr    error
-	Children     []string
-	Jobs         string
-	Mock         Client
+	ChildrenEventChannel chan zk.Event
+	GetEventChannel      chan zk.Event
+	Stat                 *zk.Stat
+	GetErr               error
+	ChildrenWErr         error
+	CreateErr            error
+	Children             []string
+	Jobs                 map[string]string
+	Mock                 Client
 }
 
 func NewZKConn() *ZKConn {
@@ -32,31 +33,49 @@ func NewZKConn() *ZKConn {
 		if zkc.GetErr != nil {
 			return nil, nil, nil, zkc.GetErr
 		}
-		return []byte(zkc.Jobs), zkc.Stat, zkc.EventChannel, nil
+		return []byte(zkc.Jobs[path]), zkc.Stat, zkc.GetEventChannel, nil
 	}
+
 	mzk.ChildrenwFn = func(path string) ([]string, *zk.Stat, <-chan zk.Event, error) {
 		if zkc.ChildrenWErr != nil {
 			return nil, nil, nil, zkc.ChildrenWErr
 		}
-		return zkc.Children, zkc.Stat, zkc.EventChannel, zkc.ChildrenWErr
+		return zkc.Children, zkc.Stat, zkc.ChildrenEventChannel, zkc.ChildrenWErr
 	}
+
 	mzk.CreateFn = func(path string, data []byte, flags int32, acl []zk.ACL) (string, error) {
 		if zkc.CreateErr != nil {
 			return "", zkc.CreateErr
 		}
 		return path, nil
 	}
+
 	zkc.Mock = mzk
+
 	return zkc
 }
 
-// SendEvent sends an event to the event channel after the provided delay.
-func (c *ZKConn) SendEvent(delay time.Duration) {
+// SendChildrenEvent sends an event to the event channel for ChildrenW after
+// the provided delay.
+func (c *ZKConn) SendChildrenEvent(delay time.Duration, path string) {
 	time.Sleep(delay)
-	c.EventChannel <- zk.Event{
+	c.ChildrenEventChannel <- zk.Event{
 		Type:   1,
 		State:  1,
-		Path:   "/zkroot/some/thing",
+		Path:   path,
+		Err:    nil,
+		Server: "foobar.com:2181",
+	}
+}
+
+// SendGetEvent sends an event to the event channel for ChildrenW after
+// the provided delay.
+func (c *ZKConn) SendGetEvent(delay time.Duration, path string) {
+	time.Sleep(delay)
+	c.GetEventChannel <- zk.Event{
+		Type:   1,
+		State:  1,
+		Path:   path,
 		Err:    nil,
 		Server: "foobar.com:2181",
 	}

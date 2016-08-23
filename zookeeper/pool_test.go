@@ -35,21 +35,23 @@ func TestPoolRun(t *testing.T) {
 		t.Logf("run validation test %d: %q", i, test.desc)
 
 		c := NewZKConn()
-		c.EventChannel = make(chan zk.Event)
+		c.ChildrenEventChannel = make(chan zk.Event)
 		c.Children = test.children
-		c.Jobs = fmt.Sprintf("somejob%d", i)
+		c.Jobs = map[string]string{fmt.Sprintf("somejob%d", i): ""}
 		c.CreateErr = test.createErr
+
+		testPath := "/vulcan/test/scrapers"
 
 		p := &Pool{
 			id:   "default-test",
 			conn: c.Mock,
-			path: "/vulcan/test/scrapers",
+			path: testPath,
 			done: make(chan struct{}),
 			out:  make(chan []string),
 		}
 
 		if test.eventDelay > 0 {
-			go c.SendEvent(time.Duration(test.eventDelay) * time.Second)
+			go c.SendChildrenEvent(time.Duration(test.eventDelay)*time.Second, testPath)
 		}
 
 		if test.closeDelay > 0 {
