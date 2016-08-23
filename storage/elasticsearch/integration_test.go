@@ -182,7 +182,7 @@ func upEntries() error {
 	return nil
 }
 
-func TestResolver(t *testing.T) {
+func TestResolve(t *testing.T) {
 	err := down()
 	if err != nil {
 		t.Error(err)

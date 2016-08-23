@@ -16,7 +16,6 @@ package querier
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/digitalocean/vulcan/convert"
 	"github.com/digitalocean/vulcan/storage"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
@@ -354,8 +354,19 @@ func (pw *PrometheusWrapper) LastSampleForFingerprint(model.Fingerprint) model.S
 }
 
 // LabelValuesForLabelName Implements prometheus.Querier interface.
-func (pw *PrometheusWrapper) LabelValuesForLabelName(model.LabelName) model.LabelValues {
-	return nil
+func (pw *PrometheusWrapper) LabelValuesForLabelName(name model.LabelName) model.LabelValues {
+	vals, err := pw.metricResolver.Values(string(name))
+	if err != nil {
+		log.WithFields(log.Fields{
+			"label_name": string(name),
+		}).WithError(err).Warn("unable to get values for label name")
+		return model.LabelValues{}
+	}
+	res := make(model.LabelValues, 0, len(vals))
+	for _, val := range vals {
+		res = append(res, model.LabelValue(val))
+	}
+	return res
 }
 
 // DropMetricsForFingerprints drops all time series associated with the given
