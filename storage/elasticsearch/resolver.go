@@ -94,7 +94,7 @@ func (r *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 // a query should use in a filter.
 func (r *Resolver) Values(field string) ([]string, error) {
 	aggr := elastic.NewTermsAggregation().
-		Field(convert.ESEscape(field)).
+		Field(fmt.Sprintf("%s.raw", convert.ESEscape(field))).
 		Size(10000) // arbitrarily large
 	res, err := r.client.Search().
 		Index(r.index).
