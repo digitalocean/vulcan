@@ -3,7 +3,11 @@ go:
   - 1.7
 before_install:
   - go get github.com/golang/lint/golint
-  - curl https://glide.sh/get | sh
+  - curl -fsSL https://github.com/Masterminds/glide/releases/download/v0.11.1/glide-v0.11.1-linux-amd64.tar.gz -o glide.tar.gz
+  - echo "de0c7870738c6bc11128761d53a99ad68687b0a213fe52cea15ad05d93f10e42  glide.tar.gz" | sha256sum -c -
+  - tar -xf glide.tar.gz --strip-components=1 -C "$GOPATH/bin" linux-amd64/glide
+  - rm glide.tar.gz
+
 script:
   - ./scripts/licensecheck.sh
   - make vet
