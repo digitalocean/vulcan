@@ -1,0 +1,11 @@
+language: go
+go:
+  - 1.7
+before_install:
+  - go get github.com/golang/lint/golint
+  - curl https://glide.sh/get | sh
+script:
+  - ./scripts/licensecheck.sh
+  - make vet
+  - make lint
+  - make

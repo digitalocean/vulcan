@@ -1,4 +1,4 @@
-# Vulcan
+# Vulcan [![Build Status](https://travis-ci.org/digitalocean/vulcan.svg?branch=master)](https://travis-ci.org/digitalocean/vulcan) [![Report Card](https://goreportcard.com/badge/github.com/digitalocean/vulcan)](https://goreportcard.com/report/github.com/digitalocean/vulcan)
 
 Vulcan is an API-compatible alternative to Prometheus. It aims to provide a better story for long-term storage, data durability, high cardinality metrics, high availability, and scalability. Vulcan is much more complex to operate, but should integrate with ease to an existing Prometheus environment. Vulcan aims to be familiar to Prometheus with configuration and queries by understanding the Prometheus scrape configuration file and the Prometheus Query Language.
 
