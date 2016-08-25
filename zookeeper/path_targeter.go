@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/digitalocean/vulcan/scraper"
 
 	log "github.com/Sirupsen/logrus"
@@ -31,7 +33,6 @@ import (
 	pconfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/util/httputil"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -260,7 +261,7 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 
 	ll.Debug("converting target groups")
 	for _, t := range tg.Targets {
-		t = pt.applyDefaultLabels(t, tg.Labels, sc)
+		t = applyDefaultLabels(t, tg.Labels, sc)
 
 		if len(sc.RelabelConfigs) > 0 && sc.RelabelConfigs[0] != nil {
 			ll.Debug("relabel configs received")
@@ -273,7 +274,7 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 			ll.WithField("labels", t).Warn("relabelled configs")
 		}
 
-		u, err := pt.getTargetURL(t, sc.MetricsPath, sc.Params)
+		u, err := getTargetURL(t, sc.MetricsPath, sc.Params)
 		if err != nil {
 			ll.WithError(err).Error("target invaldated")
 			continue
@@ -290,92 +291,12 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 		j.AddTargets(scraper.NewHTTPTarget(&scraper.HTTPTargetConfig{
 			Interval: time.Duration(sc.ScrapeInterval),
 			URL:      u,
-			JobName:  scraper.JobName(sc.JobName),
+			JobName:  scraper.JobName(t[model.JobLabel]),
 			Client:   client,
 		}))
 	}
 
 	return j
-}
-
-func (pt *PathTargeter) applyDefaultLabels(
-	target model.LabelSet,
-	tgLabels model.LabelSet,
-	sc *pconfig.ScrapeConfig,
-) model.LabelSet {
-	// initial labels, will be overwritten by higher priority labels
-	iLabels := model.LabelSet{
-		model.SchemeLabel:      model.LabelValue(sc.Scheme),
-		model.MetricsPathLabel: model.LabelValue(sc.MetricsPath),
-		model.JobLabel:         model.LabelValue(sc.JobName),
-	}
-
-	// labelize params in case in case needed for relabelling
-	for k, v := range sc.Params {
-		if len(v) > 0 {
-			iLabels[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
-		}
-	}
-
-	// apply common target group labels
-	for k, v := range tgLabels {
-		iLabels[k] = v
-	}
-
-	// apply target labels
-	for k, v := range target {
-		iLabels[k] = v
-	}
-
-	return iLabels
-}
-
-func (pt *PathTargeter) getTargetURL(
-	target model.LabelSet,
-	defaultMetricsPath string,
-	params url.Values,
-) (*url.URL, error) {
-	var (
-		metricsPath string
-		scheme      string
-	)
-
-	host, ok := target[model.AddressLabel]
-	if !ok {
-		return nil, errors.New("__address__ label key not found")
-	}
-
-	if _, ok = target[model.MetricsPathLabel]; !ok {
-		metricsPath = defaultMetricsPath
-	} else {
-		metricsPath = string(target[model.MetricsPathLabel])
-	}
-
-	switch target[model.SchemeLabel] {
-	case "http", "":
-		scheme = "http"
-
-	case "https":
-		scheme = "https"
-
-	default:
-		return nil, errors.Errorf("invalid url scheme: %v", target[model.SchemeLabel])
-	}
-
-	// check for additional params
-	for k, v := range target {
-		if strings.HasPrefix(string(k), model.ParamLabelPrefix) {
-			// override original param if found in target labels
-			params[string(k[len(model.ParamLabelPrefix):])] = []string{string(v)}
-		}
-	}
-
-	return &url.URL{
-		Scheme:   scheme,
-		Host:     string(host),
-		Path:     metricsPath,
-		RawQuery: params.Encode(),
-	}, nil
 }
 
 func (pt *PathTargeter) setJob(key string, tgs []*pconfig.TargetGroup, sc *pconfig.ScrapeConfig) {
@@ -447,6 +368,90 @@ func (pt *PathTargeter) stop() {
 			}
 		}
 	})
+}
+
+func applyDefaultLabels(
+	target model.LabelSet,
+	tgLabels model.LabelSet,
+	sc *pconfig.ScrapeConfig,
+) model.LabelSet {
+	// initial labels, will be overwritten by higher priority labels
+	iLabels := model.LabelSet{
+		model.SchemeLabel:      model.LabelValue(sc.Scheme),
+		model.MetricsPathLabel: model.LabelValue(sc.MetricsPath),
+		model.JobLabel:         model.LabelValue(sc.JobName),
+	}
+
+	// labelize params in case in case needed for relabelling
+	for k, v := range sc.Params {
+		if len(v) > 0 {
+			iLabels[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+		}
+	}
+
+	// apply common target group labels
+	for k, v := range tgLabels {
+		iLabels[k] = v
+	}
+
+	// apply target labels
+	for k, v := range target {
+		iLabels[k] = v
+	}
+
+	return iLabels
+}
+
+func getTargetURL(
+	target model.LabelSet,
+	defaultMetricsPath string,
+	params url.Values,
+) (*url.URL, error) {
+	var (
+		metricsPath string
+		scheme      string
+	)
+
+	host, ok := target[model.AddressLabel]
+	if !ok {
+		return nil, errors.New("__address__ label key not found")
+	}
+
+	if err := pconfig.CheckTargetAddress(host); err != nil {
+		return nil, errors.New("invalid host address")
+	}
+
+	if _, ok = target[model.MetricsPathLabel]; !ok {
+		metricsPath = defaultMetricsPath
+	} else {
+		metricsPath = string(target[model.MetricsPathLabel])
+	}
+
+	switch target[model.SchemeLabel] {
+	case "http", "":
+		scheme = "http"
+
+	case "https":
+		scheme = "https"
+
+	default:
+		return nil, errors.Errorf("invalid url scheme: %v", target[model.SchemeLabel])
+	}
+
+	// check for additional params
+	for k, v := range target {
+		if strings.HasPrefix(string(k), model.ParamLabelPrefix) {
+			// override original param if found in target labels
+			params[string(k[len(model.ParamLabelPrefix):])] = []string{string(v)}
+		}
+	}
+
+	return &url.URL{
+		Scheme:   scheme,
+		Host:     string(host),
+		Path:     metricsPath,
+		RawQuery: params.Encode(),
+	}, nil
 }
 
 // newHTTPClient returns a new http client.  Taken directly from prometheus.
