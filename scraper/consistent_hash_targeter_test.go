@@ -14,10 +14,7 @@
 
 package scraper
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 type mockTargeter struct {
 	out chan []Targeter
@@ -66,5 +63,5 @@ func TestConsistentHashTargeter(t *testing.T) {
 	jobs := cht.Targets()
 
 	job := <-jobs
-	fmt.Printf("job: %+v\n", job)
+	t.Logf("job: %+v\n", job)
 }
