@@ -271,7 +271,7 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 				ll.WithError(err).Error("could not relabel")
 				continue
 			}
-			ll.WithField("labels", t).Warn("relabelled configs")
+			ll.WithField("labels", t).Debug("relabelled configs")
 		}
 
 		u, err := getTargetURL(t, sc.MetricsPath, sc.Params)
