@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -137,6 +138,7 @@ scrape_configs:
 				"run() => expected but close within %d seconds but time exceeded",
 				test.closeDelay+1,
 			)
+
 		case <-testCh:
 			t.Logf("happy path test %d successful", i)
 		}
@@ -232,10 +234,10 @@ func TestK8Jobs(t *testing.T) {
 						Source: fmt.Sprintf("test-%d", i),
 						Targets: []model.LabelSet{
 							model.LabelSet{
-								"__address__": "foobar.example.com",
+								model.AddressLabel: "foobar.example.com",
 							},
 							model.LabelSet{
-								"__address__": "barfoo.example.com",
+								model.AddressLabel: "barfoo.example.com",
 							},
 						},
 					},
@@ -294,10 +296,10 @@ func TestK8Jobs(t *testing.T) {
 					Source: fmt.Sprintf("test-0"),
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.example.com",
+							model.AddressLabel: "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.example.com",
+							model.AddressLabel: "barfoo.example.com",
 						},
 					},
 				},
@@ -332,7 +334,7 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar.example.com",
+						model.AddressLabel: "foobar.example.com",
 					},
 				},
 			},
@@ -352,10 +354,10 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar.example.com",
+						model.AddressLabel: "foobar.example.com",
 					},
 					model.LabelSet{
-						"__address__": "barfoo.example.com",
+						model.AddressLabel: "barfoo.example.com",
 					},
 				},
 			},
@@ -376,34 +378,34 @@ func TestTgToJob(t *testing.T) {
 				Source: "test",
 				Targets: []model.LabelSet{
 					model.LabelSet{
-						"__address__": "foobar0.example.com",
+						model.AddressLabel: "foobar0.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar1.example.com",
+						model.AddressLabel: "foobar1.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar2.example.com",
+						model.AddressLabel: "foobar2.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar3.example.com",
+						model.AddressLabel: "foobar3.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar4.example.com",
+						model.AddressLabel: "foobar4.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar5.example.com",
+						model.AddressLabel: "foobar5.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar6.example.com",
+						model.AddressLabel: "foobar6.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar7.example.com",
+						model.AddressLabel: "foobar7.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar8.example.com",
+						model.AddressLabel: "foobar8.example.com",
 					},
 					model.LabelSet{
-						"__address__": "foobar9.example.com",
+						model.AddressLabel: "foobar9.example.com",
 					},
 				},
 			},
@@ -424,6 +426,84 @@ func TestTgToJob(t *testing.T) {
 				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar7.example.com", Path: "/metrics", Scheme: "http"}),
 				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar8.example.com", Path: "/metrics", Scheme: "http"}),
 				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar9.example.com", Path: "/metrics", Scheme: "http"}),
+			},
+		},
+		{
+			desc: "2 targets, defaults overwritten in target labels in 1 target",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						model.AddressLabel:     "foobar.example.com",
+						model.SchemeLabel:      "https",
+						model.MetricsPathLabel: "/overwritten/metrics",
+						model.JobLabel:         "test99",
+					},
+					model.LabelSet{
+						model.AddressLabel: "barfoo.example.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+			},
+			expectedTargeterKeys: []string{
+				fmt.Sprintf("test99-%s", &url.URL{Host: "foobar.example.com", Path: "/overwritten/metrics", Scheme: "https"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "barfoo.example.com", Path: "/metrics", Scheme: "http"}),
+			},
+		},
+		{
+			desc: "2 targets with relabeling config",
+			tg: &pconfig.TargetGroup{
+				Source: "test",
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						model.AddressLabel: "foobar.example.com",
+						model.LabelName(model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_scrape"): "true",
+						model.LabelName(model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_scheme"): "https",
+						model.LabelName(model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_path"):   "/overwritten",
+					},
+					model.LabelSet{
+						model.AddressLabel: "barfoo.example.com",
+						model.LabelName(model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_scrape"): "true",
+						model.MetricsPathLabel: "/other/metrics",
+					},
+					model.LabelSet{
+						model.AddressLabel: "oofrab.example.com",
+					},
+				},
+			},
+			sc: &pconfig.ScrapeConfig{
+				JobName:        "test1",
+				Scheme:         "http",
+				ScrapeInterval: model.Duration(15),
+				MetricsPath:    "/metrics",
+				RelabelConfigs: []*pconfig.RelabelConfig{
+					&pconfig.RelabelConfig{
+						SourceLabels: model.LabelNames{model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_scrape"},
+						Action:       pconfig.RelabelKeep,
+						Regex:        pconfig.MustNewRegexp("true"),
+					},
+					&pconfig.RelabelConfig{
+						SourceLabels: model.LabelNames{model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_scheme"},
+						TargetLabel:  model.SchemeLabel,
+						Action:       pconfig.RelabelReplace,
+						Regex:        pconfig.MustNewRegexp("(https?)"),
+					},
+					&pconfig.RelabelConfig{
+						SourceLabels: model.LabelNames{model.MetaLabelPrefix + "kubernetes_service_annotation_prometheus_io_path"},
+						TargetLabel:  model.MetricsPathLabel,
+						Action:       pconfig.RelabelReplace,
+						Regex:        pconfig.MustNewRegexp("(.+)"),
+					},
+				},
+			},
+			expectedTargeterKeys: []string{
+				fmt.Sprintf("test1-%s", &url.URL{Host: "foobar.example.com", Path: "/metrics", Scheme: "http"}),
+				fmt.Sprintf("test1-%s", &url.URL{Host: "barfoo.example.com", Path: "/other/metrics", Scheme: "http"}),
 			},
 		},
 		{
@@ -510,7 +590,359 @@ func TestTgToJob(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestApplyDefaultLabels(t *testing.T) {
+	var happyPathTests = []struct {
+		desc          string
+		paramTarget   model.LabelSet
+		paramTgLabels model.LabelSet
+		paramSc       *pconfig.ScrapeConfig
+		expected      model.LabelSet
+	}{
+		{
+			desc: "only target labels, no overrides",
+			paramTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:8080",
+			},
+			paramTgLabels: model.LabelSet{},
+			paramSc: &pconfig.ScrapeConfig{
+				Scheme:      "http",
+				MetricsPath: "/metric",
+				JobName:     "sammy",
+			},
+			expected: model.LabelSet{
+				model.SchemeLabel:      "http",
+				model.MetricsPathLabel: "/metric",
+				model.JobLabel:         "sammy",
+				model.AddressLabel:     "sammy.example.com:8080",
+			},
+		},
+		{
+			desc: "target labels, override all default",
+			paramTarget: model.LabelSet{
+				model.AddressLabel:     "sammy.example.com:8080",
+				model.MetricsPathLabel: "/ocean",
+				model.SchemeLabel:      "https",
+				model.JobLabel:         "droplet",
+			},
+			paramTgLabels: model.LabelSet{},
+			paramSc: &pconfig.ScrapeConfig{
+				Scheme:      "http",
+				MetricsPath: "/metric",
+				JobName:     "sammy",
+			},
+			expected: model.LabelSet{
+				model.AddressLabel:     "sammy.example.com:8080",
+				model.MetricsPathLabel: "/ocean",
+				model.SchemeLabel:      "https",
+				model.JobLabel:         "droplet",
+			},
+		},
+		{
+			desc: "target labels & targetgroup labels, override some",
+			paramTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:8080",
+				model.SchemeLabel:  "https",
+			},
+			paramTgLabels: model.LabelSet{
+				model.JobLabel:                                 "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"): "foobar",
+			},
+			paramSc: &pconfig.ScrapeConfig{
+				Scheme:      "http",
+				MetricsPath: "/metric",
+				JobName:     "sammy",
+			},
+			expected: model.LabelSet{
+				model.AddressLabel:                             "sammy.example.com:8080",
+				model.MetricsPathLabel:                         "/metric",
+				model.SchemeLabel:                              "https",
+				model.JobLabel:                                 "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"): "foobar",
+			},
+		},
+		{
+			desc: "target labels & targetgroup labels & config query params, override some",
+			paramTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:8080",
+				model.SchemeLabel:  "https",
+			},
+			paramTgLabels: model.LabelSet{
+				model.JobLabel:                                 "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"): "foobar",
+			},
+			paramSc: &pconfig.ScrapeConfig{
+				Scheme:      "http",
+				MetricsPath: "/metric",
+				JobName:     "sammy",
+				Params: url.Values{
+					"droplets":    []string{"raboof"},
+					"blk_storage": []string{"barfoo"},
+				},
+			},
+			expected: model.LabelSet{
+				model.AddressLabel:                                      "sammy.example.com:8080",
+				model.MetricsPathLabel:                                  "/metric",
+				model.SchemeLabel:                                       "https",
+				model.JobLabel:                                          "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"):          "foobar",
+				model.LabelName(model.ParamLabelPrefix + "droplets"):    "raboof",
+				model.LabelName(model.ParamLabelPrefix + "blk_storage"): "barfoo",
+			},
+		},
+		{
+			desc: "target labels & targetgroup labels & config query params, override config query params",
+			paramTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:8080",
+				model.SchemeLabel:  "https",
+			},
+			paramTgLabels: model.LabelSet{
+				model.JobLabel:                                 "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"): "foobar",
+			},
+			paramSc: &pconfig.ScrapeConfig{
+				Scheme:      "http",
+				MetricsPath: "/metric",
+				JobName:     "sammy",
+				Params: url.Values{
+					"droplets":    []string{"raboof"},
+					"blk_storage": []string{"barfoo"},
+					"do":          []string{"overwritten"},
+				},
+			},
+			expected: model.LabelSet{
+				model.AddressLabel:                                      "sammy.example.com:8080",
+				model.MetricsPathLabel:                                  "/metric",
+				model.SchemeLabel:                                       "https",
+				model.JobLabel:                                          "sammy-tg1",
+				model.LabelName(model.ParamLabelPrefix + "do"):          "foobar",
+				model.LabelName(model.ParamLabelPrefix + "droplets"):    "raboof",
+				model.LabelName(model.ParamLabelPrefix + "blk_storage"): "barfoo",
+			},
+		},
+	}
+
+	for i, test := range happyPathTests {
+		t.Logf("happy path tests %d: %q", i, test.desc)
+
+		got := applyDefaultLabels(test.paramTarget, test.paramTgLabels, test.paramSc)
+
+		if !reflect.DeepEqual(got, test.expected) {
+			t.Errorf(
+				"applyDefaultLabels(%v, %v, %v) => got %v; expected %v",
+				test.paramTarget,
+				test.paramTgLabels,
+				test.paramSc,
+				got,
+				test.expected,
+			)
+		}
+	}
+}
+
+func TestGetTargetURL(t *testing.T) {
+	var happyPathTests = []struct {
+		desc                  string
+		argTarget             model.LabelSet
+		argDefaultMetricsPath string
+		argParams             url.Values
+		expected              *url.URL
+	}{
+		{
+			desc: "only address in target label, no query params",
+			argTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:8888",
+			},
+			argDefaultMetricsPath: "/metric",
+			argParams:             url.Values{},
+			expected: &url.URL{
+				Scheme: "http",
+				Host:   "sammy.example.com:8888",
+				Path:   "/metric",
+			},
+		},
+		{
+			desc: "address, scheme, and path in target label, no query params",
+			argTarget: model.LabelSet{
+				model.AddressLabel:     "sammy.example.com:8888",
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/super/metrics",
+			},
+			argDefaultMetricsPath: "/metric",
+			argParams:             url.Values{},
+			expected: &url.URL{
+				Scheme: "https",
+				Host:   "sammy.example.com:8888",
+				Path:   "/super/metrics",
+			},
+		},
+		{
+			desc: "address, scheme, and path in target label with query params in argument",
+			argTarget: model.LabelSet{
+				model.AddressLabel:     "sammy.example.com:8888",
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/super/metrics",
+			},
+			argDefaultMetricsPath: "/metric",
+			argParams: url.Values{
+				"something_cool":  []string{"awesome"},
+				"something_sweet": []string{"donuts"},
+			},
+			expected: &url.URL{
+				Scheme: "https",
+				Host:   "sammy.example.com:8888",
+				Path:   "/super/metrics",
+				RawQuery: url.Values{
+					"something_cool":  []string{"awesome"},
+					"something_sweet": []string{"donuts"},
+				}.Encode(),
+			},
+		},
+		{
+			desc: "address, scheme, and path in target label with some query params overwitten by target labels",
+			argTarget: model.LabelSet{
+				model.AddressLabel:                                          "sammy.example.com:8888",
+				model.SchemeLabel:                                           "https",
+				model.MetricsPathLabel:                                      "/super/metrics",
+				model.LabelName(model.ParamLabelPrefix + "something_cool"):  "coolio",
+				model.LabelName(model.ParamLabelPrefix + "something_sweet"): "canoli",
+			},
+			argDefaultMetricsPath: "/metric",
+			argParams: url.Values{
+				"something_cool":   []string{"awesome"},
+				"something_sweet":  []string{"donuts"},
+				"something_savory": []string{"porkbelly"},
+			},
+			expected: &url.URL{
+				Scheme: "https",
+				Host:   "sammy.example.com:8888",
+				Path:   "/super/metrics",
+				RawQuery: url.Values{
+					"something_cool":   []string{"coolio"},
+					"something_sweet":  []string{"canoli"},
+					"something_savory": []string{"porkbelly"},
+				}.Encode(),
+			},
+		},
+		{
+			desc: "address, scheme, and path in target label with all query params overwitten by target labels",
+			argTarget: model.LabelSet{
+				model.AddressLabel:                                           "sammy.example.com:8888",
+				model.SchemeLabel:                                            "https",
+				model.MetricsPathLabel:                                       "/super/metrics",
+				model.LabelName(model.ParamLabelPrefix + "something_cool"):   "coolio",
+				model.LabelName(model.ParamLabelPrefix + "something_sweet"):  "canoli",
+				model.LabelName(model.ParamLabelPrefix + "something_savory"): "brisket",
+			},
+			argDefaultMetricsPath: "/metric",
+			argParams: url.Values{
+				"something_cool":   []string{"awesome"},
+				"something_sweet":  []string{"donuts"},
+				"something_savory": []string{"porkbelly"},
+			},
+			expected: &url.URL{
+				Scheme: "https",
+				Host:   "sammy.example.com:8888",
+				Path:   "/super/metrics",
+				RawQuery: url.Values{
+					"something_cool":   []string{"coolio"},
+					"something_sweet":  []string{"canoli"},
+					"something_savory": []string{"brisket"},
+				}.Encode(),
+			},
+		},
+	}
+
+	for i, test := range happyPathTests {
+		t.Logf("happy path tests %d: %q", i, test.desc)
+
+		got, err := getTargetURL(
+			test.argTarget,
+			test.argDefaultMetricsPath,
+			test.argParams,
+		)
+		if err != nil {
+			t.Fatalf(
+				"getTargetURL(%v, %q, %v) => got error: %v; expected nil",
+				test.argTarget,
+				test.argDefaultMetricsPath,
+				test.argParams,
+				err,
+			)
+		}
+
+		if !reflect.DeepEqual(got, test.expected) {
+			t.Errorf(
+				"getTargetURL(%v, %q, %v) => got %v; expected %v",
+				test.argTarget,
+				test.argDefaultMetricsPath,
+				test.argParams,
+				got,
+				test.expected,
+			)
+		}
+	}
+
+	var negativeTests = []struct {
+		desc                  string
+		argTarget             model.LabelSet
+		argDefaultMetricsPath string
+		argParams             url.Values
+	}{
+		{
+			desc: "missing address label",
+			argTarget: model.LabelSet{
+				model.MetaLabelPrefix: "/metric/fail",
+			},
+			argDefaultMetricsPath: "metric",
+			argParams:             url.Values{},
+		},
+		{
+			desc: "missing address label",
+			argTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:7777",
+				model.SchemeLabel:  "ftp",
+			},
+			argDefaultMetricsPath: "metric",
+			argParams:             url.Values{},
+		},
+		{
+			desc: "invalid address label",
+			argTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:/7777",
+				model.SchemeLabel:  "http",
+			},
+			argDefaultMetricsPath: "metric",
+			argParams:             url.Values{},
+		},
+		{
+			desc: "double fail",
+			argTarget: model.LabelSet{
+				model.AddressLabel: "sammy.example.com:/7777",
+				model.SchemeLabel:  "ftp",
+			},
+			argDefaultMetricsPath: "metric",
+			argParams:             url.Values{},
+		},
+	}
+
+	for i, test := range negativeTests {
+		t.Logf("negative tests %d: %q", i, test.desc)
+
+		if _, err := getTargetURL(
+			test.argTarget,
+			test.argDefaultMetricsPath,
+			test.argParams,
+		); err == nil {
+			t.Errorf(
+				"getTargetURL(%v, %s, %v) => nil errors; expected an error",
+				test.argTarget,
+				test.argDefaultMetricsPath,
+				test.argParams,
+			)
+		}
+	}
 }
 
 // TODO Integrate JobDeepEquals for better test validation.
@@ -853,10 +1285,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.example.com",
+							model.AddressLabel: "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.example.com",
+							model.AddressLabel: "barfoo.example.com",
 						},
 					},
 				},
@@ -891,10 +1323,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.example.com",
+							model.AddressLabel: "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.example.com",
+							model.AddressLabel: "barfoo.example.com",
 						},
 					},
 				},
@@ -939,10 +1371,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.example.com",
+							model.AddressLabel: "foobar.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.example.com",
+							model.AddressLabel: "barfoo.example.com",
 						},
 					},
 				},
@@ -950,10 +1382,10 @@ func TestSetJob(t *testing.T) {
 					Source: "test2",
 					Targets: []model.LabelSet{
 						model.LabelSet{
-							"__address__": "foobar.oceandigital.example.com",
+							model.AddressLabel: "foobar.oceandigital.example.com",
 						},
 						model.LabelSet{
-							"__address__": "barfoo.oceandigital.example.com",
+							model.AddressLabel: "barfoo.oceandigital.example.com",
 						},
 					},
 				},

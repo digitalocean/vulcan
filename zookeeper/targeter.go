@@ -107,7 +107,7 @@ func (t *Targeter) run() {
 
 		select {
 		case <-ech:
-			ll.Debug("watch event received for ChildrenW")
+			ll.Info("watch event received for ChildrenW")
 			close(done)
 
 		case <-t.done:
@@ -126,19 +126,25 @@ func (t *Targeter) listenForJobs(childName string, state *chState, done <-chan s
 	for {
 		select {
 		case jobs := <-state.pt.Jobs():
-
 			ll.Debug("job update received")
 
 			var targets []scraper.Targeter
 			for _, job := range jobs {
 				targets = append(targets, job.GetTargets()...)
 			}
+
 			t.mutex.Lock()
 
-			t.children[childName].targets = targets
-			t.out <- t.allTargets()
+			if _, ok := t.children[childName]; ok {
+				t.children[childName].targets = targets
+			} else {
+				ll.Warn("job upate for deprecated child received")
+				return
+			}
 
 			t.mutex.Unlock()
+
+			t.out <- t.allTargets()
 
 		case <-done:
 			return
@@ -185,11 +191,13 @@ func (t *Targeter) setChildren(cn []string) {
 
 		go func() {
 			defer wg.Done()
+
 			jobs := <-st.pt.Jobs()
 			targets := []scraper.Targeter{}
 			for _, j := range jobs {
 				targets = append(targets, j.GetTargets()...)
 			}
+
 			st.targets = targets
 		}()
 	}
@@ -203,14 +211,19 @@ func (t *Targeter) setChildren(cn []string) {
 	t.mutex.Lock()
 	t.children = next
 	t.mutex.Unlock()
+
 }
 
 func (t *Targeter) allTargets() []scraper.Targeter {
 	var results []scraper.Targeter
 
+	t.mutex.Lock()
+
 	for _, child := range t.children {
 		results = append(results, child.targets...)
 	}
+
+	t.mutex.Unlock()
 
 	return results
 }

@@ -70,6 +70,7 @@ func (w *Worker) run() {
 			ll.Debug("fetching target")
 			fams, err := w.Target.Fetch()
 			if err != nil {
+				ll.WithError(err).Error("unsuccessful fetch")
 				continue // keep trying
 			}
 
