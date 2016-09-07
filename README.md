@@ -1,6 +1,6 @@
 # Vulcan [![Build Status](https://travis-ci.org/digitalocean/vulcan.svg?branch=master)](https://travis-ci.org/digitalocean/vulcan) [![Report Card](https://goreportcard.com/badge/github.com/digitalocean/vulcan)](https://goreportcard.com/report/github.com/digitalocean/vulcan)
 
-Vulcan is an API-compatible alternative to Prometheus. It aims to provide a better story for long-term storage, data durability, high cardinality metrics, high availability, and scalability. Vulcan is much more complex to operate, but should integrate with ease to an existing Prometheus environment. Vulcan aims to be familiar to Prometheus with configuration and queries by understanding the Prometheus scrape configuration file and the Prometheus Query Language.
+Vulcan is an API-compatible extension to Prometheus. It aims to provide a better story for long-term storage, data durability, and high cardinality metrics while making sure that each component is horizontally scalable. Vulcan is much more complex to operate, but should integrate with ease to an existing Prometheus environment.
 
 Vulcan is highly experimental.
 
@@ -16,67 +16,72 @@ The core developers are accessible via the [Vulcan Developers Mailinglist](https
 
 Vulcan should use open-source databases (e.g. Kafka, ElasticSearch, Cassandra)
 
-Vulcan should strive to be API-compatible with Prometheus. E.g. additional scraper job service discovery should be committed upstream to Prometheus then included in Vulcan. E.g. PromQL discussions and improvements should happen in the Prometheus community.
+Vulcan should strive to be API-compatible with Prometheus e.g. PromQL discussions and improvements should happen in the Prometheus community, committed in the Prometheus code base, and then used in Vulcan.
 
 # Architecture
 
 ```
-       ┌─────────────────────┐
-       │prometheus exporters ├─┐
-       └─┬───────────────────┘ ├─┐
-         └─┬───────────────────┘ │
-           └─────────────────────┘
-                      △
-                      │
-                      │
-                      ▼
-             ┌─────────────────┐
-             │    scrapers     ├─┐
-             └─┬───────────────┘ ├─┐                ┌────────────┐
-               └─┬───────────────┘ │              ┌─│downsamplers├─┐
-                 └─────────────────┘              │ └─┬──────────┘ ├─┐
-                          │                       │   └─┬──────────┘ │
+       ┌─────────────────────┐                                        
+       │prometheus exporters ├─┐                                      
+       └─┬───────────────────┘ ├─┐                                    
+         └─┬───────────────────┘ │                                    
+           └─────────────────────┘                                    
+                      △                                               
+                  ┌───┘                                               
+                  ▼                                                   
+       ┌─────────────────────┐                                        
+       │     prometheus      │                                        
+       │                     │                                        
+       │(remote storage api) │                                        
+       └─────────────────────┘                                        
+                  │                                                   
+                  ▼                                                   
+       ┌─────────────────────┐                                        
+       │      forwarder      │                      ┌────────────┐    
+       └─────────────────────┘                    ┌─│downsamplers├─┐  
+                  │                               │ └─┬──────────┘ ├─┐
+                  └───────┐                       │   └─┬──────────┘ │
                           │                       │     └────────────┘
-                          ▼                       ▼            ▲
-  ┌───────────────────────────────────────────────┐            │
-  │                     KAFKA                     │────────────┘
-  └───────────────────────────────────────────────┘
-                          △
-         ┌────────────────┴─┬────────────────────┐
-         │                  │                    │
-         ▼                  ▼                    ▼
-  ┌────────────┐     ┌─────────────┐      ┌─────────────┐
-  │  indexers  ├─┐   │  ingesters  ├─┐    │ compactors  ├─┐
-  └─┬──────────┘ ├─┐ └─┬───────────┘ ├─┐  └─┬───────────┘ ├─┐
-    └─┬──────────┘ │   └─┬───────────┘ │    └─┬───────────┘ │
-      └────────────┘     └─────────────┘      └─────────────┘
-             │                  │                    │
-            ┌┘                  └─┬──────────────────┘
-            │                     │
-            ▼                     ▼
-   ┌──── ───── ───── ┐    ┌──── ───── ────┐
-                     │    │
-   │                 │    │               │
-   │  ElasticSearch  │        Cassandra   │
-   │                 │    │               │
-   │                      │               │
-   └ ───── ───── ────┘    └── ───── ───── ┘
-            △                     △
-            └──┬──────────────────┘
-               │
-               ▼
-         ┌──────────┐                       ┌───────────┐
-         │ queriers ├─┐                     │  PromQL   │
-         └─┬────────┘ ├─┐         ┌────────▶│  grafana  │
-           └─┬────────┘ │◁────────┘         └───────────┘
-             └──────────┘
+                          ▼                       ▼            ▲      
+  ┌──── ───── ───── ───── ───── ───── ───── ───── ┐            │      
+  │                     Kafka                     │◁───────────┘      
+  └── ───── ───── ───── ───── ───── ───── ───── ──┘                   
+                          △                                           
+         ┌────────────────┴─┬────────────────────┐                    
+         │                  │                    │                    
+         ▼                  ▼                    ▼                    
+  ┌────────────┐     ┌─────────────┐      ┌─────────────┐             
+  │  indexers  ├─┐   │  ingesters  ├─┐    │ compactors  ├─┐           
+  └─┬──────────┘ ├─┐ └─┬───────────┘ ├─┐  └─┬───────────┘ ├─┐         
+    └─┬──────────┘ │   └─┬───────────┘ │    └─┬───────────┘ │         
+      └────────────┘     └─────────────┘      └─────────────┘         
+             │                  │                    │                
+            ┌┘                  └─┬──────────────────┘                
+            │                     │                                   
+            ▼                     ▼                                   
+   ┌──── ───── ───── ┐    ┌──── ───── ────┐                           
+                     │    │                                           
+   │                 │    │               │                           
+   │  ElasticSearch  │        Cassandra   │                           
+   │                 │    │               │                           
+   │                      │               │                           
+   └ ───── ───── ────┘    └── ───── ───── ┘                           
+            △                     △                                   
+            └──┬──────────────────┘                                   
+               │                                                      
+               ▼                                                      
+         ┌──────────┐                       ┌───────────┐             
+         │ queriers ├─┐                     │  PromQL   │             
+         └─┬────────┘ ├─┐         ┌────────▶│  grafana  │             
+           └─┬────────┘ │◁────────┘         └───────────┘             
+             └──────────┘                                             
 ```
 
 ## Components
 
-### Scrapers
+### Forwarder [ NOT IMPLEMENTED ]
 
-Scrapers put metrics onto the Vulcan metrics bus from prometheus exporters. They are a pool of workers that coordinate to share the load of polling all configured prometheus exporters and writing the polled metrics onto the bus (Kafka). Scrapers are configured in a familiar way to configuring the scrape jobs of a Prometheus server.
+A forwarder implements the Prometheus remote storage API. A forwarder should live close to a Prometheus server (even on the same machine). The forwarder consumes metrics from Prometheus and writes them into Vulcan in a format that Vulcan expects.
 
 ### Downsamplers [ NOT IMPLEMENTED ]
 
