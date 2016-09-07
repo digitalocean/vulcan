@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	pconfig "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -256,7 +257,6 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 			JobName:   scraper.JobName(sc.JobName),
 			Targeters: []scraper.Targeter{},
 		})
-		err error
 	)
 
 	ll.Debug("converting target groups")
@@ -266,11 +266,7 @@ func (pt *PathTargeter) tgToJob(tg *pconfig.TargetGroup, sc *pconfig.ScrapeConfi
 		if len(sc.RelabelConfigs) > 0 && sc.RelabelConfigs[0] != nil {
 			ll.Debug("relabel configs received")
 
-			t, err = retrieval.Relabel(t, sc.RelabelConfigs...)
-			if err != nil {
-				ll.WithError(err).Error("could not relabel")
-				continue
-			}
+			t = relabel.Process(t, sc.RelabelConfigs...)
 			ll.WithField("labels", t).Debug("relabelled configs")
 		}
 
