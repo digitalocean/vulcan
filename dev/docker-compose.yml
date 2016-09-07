@@ -65,9 +65,8 @@ services:
       - ./container:/container:ro      
     entrypoint: ['/container/indexer/run']
     links:
-    - node_exporter:node_exporter
     - kafka:kafka
-    - zookeeper:zookeeper
+    - elasticsearch:elasticsearch
     environment:
       VULCAN_KAFKA_ADDRS: kafka:9092
       VULCAN_ES: http://elasticsearch:9200/
@@ -81,9 +80,8 @@ services:
       - ./container:/container:ro      
     entrypoint: ['/container/ingester/run']
     links:
-    - node_exporter:node_exporter
     - kafka:kafka
-    - zookeeper:zookeeper
+    - cassandra:cassandra
     environment:
       VULCAN_CASSANDRA_ADDRS: cassandra
       VULCAN_KAFKA_ADDRS: kafka:9092
@@ -98,9 +96,8 @@ services:
       - '9090:9090'  
     entrypoint: ['/container/querier/run']
     links:
-    - node_exporter:node_exporter
-    - kafka:kafka
-    - zookeeper:zookeeper
+    - cassandra:cassandra
+    - elasticsearch:elasticsearch
     environment:
       VULCAN_CASSANDRA_ADDRS: cassandra
       VULCAN_ES: http://elasticsearch:9200/
