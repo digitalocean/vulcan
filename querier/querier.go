@@ -76,14 +76,17 @@ func (q *Querier) Collect(ch chan<- prometheus.Metric) {
 
 // Run starts the Querir HTTP service.
 func (q *Querier) Run() error {
-	ps, err := NewPrometheusWrapper(&PrometheusWrapperConfig{
-		DatapointReader: q.dpr,
-		MetricResolver:  q.r,
+	dr := &DatapointReader{
+		DR: q.dpr,
+	}
+	w, err := NewWrapper(&WrapperConfig{
+		IteratorFactory: dr,
+		Resolver:        q.r,
 	})
 	if err != nil {
 		return err
 	}
-	queryEngine := promql.NewEngine(ps, &promql.EngineOptions{
+	queryEngine := promql.NewEngine(w, &promql.EngineOptions{
 		MaxConcurrentQueries: 20,
 		Timeout:              time.Minute * 10,
 	})
@@ -104,10 +107,10 @@ func (q *Querier) Run() error {
 	// 	Flags: map[string]string{},
 	// 	Birth: time.Now(),
 	// }
-	prometheus.MustRegister(ps)
+	prometheus.MustRegister(w)
 	externalURL, _ := url.Parse("http://localhost:9090")
 	tm := &retrieval.TargetManager{}
-	webHandler := web.New(ps, queryEngine, tm, ruleManager, &web.PrometheusVersion{}, map[string]string{}, &web.Options{
+	webHandler := web.New(w, queryEngine, tm, ruleManager, &web.PrometheusVersion{}, map[string]string{}, &web.Options{
 		ListenAddress: ":9090",
 		MetricsPath:   "/metrics",
 		ExternalURL:   externalURL,
