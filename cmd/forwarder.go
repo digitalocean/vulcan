@@ -23,6 +23,7 @@ import (
 	"github.com/digitalocean/vulcan/forwarder"
 	"github.com/digitalocean/vulcan/kafka"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -37,6 +38,8 @@ func Forwarder() *cobra.Command {
 		Use:   "forwarder",
 		Short: "forwards metric received from promotheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			log.SetLevel(log.DebugLevel)
+
 			cmd.Flags().VisitAll(func(f *pflag.Flag) {
 				viper.BindPFlag(f.Name, f)
 			})
@@ -51,6 +54,12 @@ func Forwarder() *cobra.Command {
 				return err
 			}
 
+			log.WithFields(log.Fields{
+				"kafka_client_id": viper.GetString("kafka-client-id"),
+				"kafka_topic":     viper.GetString("kafka-topic"),
+				"kafka_addresses": viper.GetString("kafka-addrs"),
+			}).Info("registered as kafka producer")
+
 			bw := forwarder.NewForwarder(&forwarder.Config{Writer: w})
 
 			d := forwarder.NewDecompressor()
@@ -62,6 +71,10 @@ func Forwarder() *cobra.Command {
 
 			server := grpc.NewServer(grpc.RPCDecompressor(d))
 			remote.RegisterWriteServer(server, bw)
+
+			log.WithFields(log.Fields{
+				"listening_address": viper.GetString("address"),
+			}).Info("starting vulcan forwarder service")
 
 			return server.Serve(lis)
 		},
