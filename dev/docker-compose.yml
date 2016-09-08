@@ -42,21 +42,6 @@ services:
       - ./container:/container:ro
     entrypoint: ['/container/grafana/run']
 
-  scraper:
-    build:
-      context: ..
-      dockerfile: dev/vulcan.dockerfile
-    volumes:
-      - ./container:/container:ro      
-    entrypoint: ['/container/scraper/run']
-    links:
-    - node_exporter:node_exporter
-    - kafka:kafka
-    - zookeeper:zookeeper
-    environment:
-      VULCAN_ZK_SERVERS: zookeeper:2181
-      VULCAN_KAFKA_ADDRS: kafka:9092
-
   indexer:
     build:
       context: ..
