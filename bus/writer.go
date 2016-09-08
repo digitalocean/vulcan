@@ -18,5 +18,5 @@ import "github.com/prometheus/prometheus/storage/remote"
 
 // Writer is an interface that wraps the Write method to a message bus.
 type Writer interface {
-	Write(string, *remote.WriteRequest) error
+	Write(key string, req *remote.WriteRequest) error
 }

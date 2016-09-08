@@ -34,6 +34,8 @@ type Forwarder struct {
 	writer bus.Writer
 }
 
+var _ remote.WriteServer = &Forwarder{}
+
 // Config represents the configuration for a Forwarder.
 type Config struct {
 	Writer bus.Writer
@@ -46,7 +48,7 @@ func NewForwarder(config *Config) *Forwarder {
 	}
 }
 
-// Write implements remote.WriteClient interface.
+// Write implements remote.WriteServer interface.
 func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remote.WriteResponse, error) {
 	var (
 		toWrite = map[string]*remote.WriteRequest{}
@@ -74,15 +76,14 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 
 	// Write each batch to the Vulcan bus.
 	for key, wr := range toWrite {
+		ll = ll.WithFields(log.Fields{"key": key})
+
 		ll.WithFields(log.Fields{
-			"key":              key,
 			"timeseries_count": len(wr.Timeseries),
 		}).Info("writing to bus")
 
 		if err := f.writer.Write(key, wr); err != nil {
-			log.WithFields(log.Fields{
-				"key": key,
-			}).WithError(err).Error("failed to write to bus")
+			ll.WithError(err).Error("failed to write to bus")
 
 			continue
 		}

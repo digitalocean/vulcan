@@ -36,7 +36,7 @@ import (
 func Forwarder() *cobra.Command {
 	f := &cobra.Command{
 		Use:   "forwarder",
-		Short: "forwards metric received from promotheus to message bus",
+		Short: "forwards metric received from prometheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log.SetLevel(log.DebugLevel)
 

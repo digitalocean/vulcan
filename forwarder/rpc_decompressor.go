@@ -18,12 +18,16 @@ import (
 	"io"
 	"io/ioutil"
 
+	"google.golang.org/grpc"
+
 	"github.com/golang/snappy"
 )
 
 // Decompressor represents object that implements a GRPC Compressor interface.
 // Currently only supports Snappy decompression.
 type Decompressor struct{}
+
+var _ grpc.Decompressor = &Decompressor{}
 
 // NewDecompressor returns a new Decompressor.
 func NewDecompressor() *Decompressor {

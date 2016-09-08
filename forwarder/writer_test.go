@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-func TestGetKey(t *testing.T) {
+func getKeyHappyPath(t *testing.T) {
 	var happyPathTests = []struct {
 		desc     string
 		arg      *remote.TimeSeries
@@ -136,7 +136,9 @@ func TestGetKey(t *testing.T) {
 			)
 		}
 	}
+}
 
+func getKeyNegative(t *testing.T) {
 	var negativeTests = []struct {
 		desc string
 		arg  *remote.TimeSeries
@@ -188,6 +190,26 @@ func TestGetKey(t *testing.T) {
 		if _, err := getKey(test.arg); err == nil {
 			t.Errorf("getKey(%v) => expected an error but got nil", test.arg)
 		}
+	}
+}
+
+func TestGetKey(t *testing.T) {
+	var tests = []struct {
+		name     string
+		testFunc func(*testing.T)
+	}{
+		{
+			name:     "happy",
+			testFunc: getKeyHappyPath,
+		},
+		{
+			name:     "neg",
+			testFunc: getKeyNegative,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, test.testFunc)
 	}
 }
 
