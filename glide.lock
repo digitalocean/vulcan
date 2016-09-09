@@ -1,37 +1,37 @@
-hash: 1b133d31fa2d02d7808eb40843dc795227129959cd940c3023636bc8eb9162b3
-updated: 2016-09-07T12:59:00.166637116+02:00
+hash: 07403953c92452205aa76dc3c89cd9467ec20d0c9ec021c6928f1486d383d254
+updated: 2016-09-08T14:03:40.070500954-04:00
 imports:
 - name: github.com/aws/aws-sdk-go
   version: a11ddd7a070196035bc94b6c04a2a0114c06a395
   subpackages:
   - aws
-  - aws/credentials
-  - aws/defaults
-  - service/ec2
   - aws/awserr
-  - aws/credentials/ec2rolecreds
   - aws/awsutil
+  - aws/corehandlers
+  - aws/credentials
+  - aws/credentials/ec2rolecreds
+  - aws/defaults
+  - aws/ec2metadata
   - aws/request
   - aws/service
   - aws/service/serviceinfo
-  - internal/protocol/ec2query
-  - internal/signer/v4
-  - aws/ec2metadata
-  - aws/corehandlers
   - internal/endpoints
+  - internal/protocol/ec2query
   - internal/protocol/query/queryutil
-  - internal/protocol/xml/xmlutil
   - internal/protocol/rest
+  - internal/protocol/xml/xmlutil
+  - internal/signer/v4
+  - service/ec2
 - name: github.com/Azure/azure-sdk-for-go
-  version: 34467930a15f0d2872168deb11435b8ac3d863bb
+  version: a9e8b991cde41aeef7dde53fc1ee2c74af5ed30b
   subpackages:
   - arm/compute
   - arm/network
 - name: github.com/Azure/go-autorest
   version: 3a30515cff8ca0504593132b55cd9e5aa2136f74
   subpackages:
-  - autorest/azure
   - autorest
+  - autorest/azure
   - autorest/date
   - autorest/to
   - autorest/validation
@@ -42,7 +42,7 @@ imports:
 - name: github.com/BurntSushi/toml
   version: 99064174e013895bbd9b025c31100bd1d9b590ca
 - name: github.com/davecgh/go-spew
-  version: 6cf5744a041a0022271cefed95ba843f6d87fd51
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
   subpackages:
   - spew
 - name: github.com/dgrijalva/jwt-go
@@ -82,10 +82,10 @@ imports:
   subpackages:
   - hcl/ast
   - hcl/parser
-  - hcl/token
-  - json/parser
   - hcl/scanner
   - hcl/strconv
+  - hcl/token
+  - json/parser
   - json/scanner
   - json/token
 - name: github.com/hashicorp/serf
@@ -94,6 +94,15 @@ imports:
   - coordinate
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
+- name: github.com/influxdata/influxdb
+  version: 0521c2a03ed24aa7cddcbd666f2e0f895c9109fe
+  subpackages:
+  - models
+  - pkg/escape
+- name: github.com/influxdb/influxdb
+  version: 0521c2a03ed24aa7cddcbd666f2e0f895c9109fe
+  subpackages:
+  - client
 - name: github.com/julienschmidt/httprouter
   version: d8ff598a019f2c7bad0980917a588193cf26666e
 - name: github.com/klauspost/crc32
@@ -101,7 +110,7 @@ imports:
 - name: github.com/kr/fs
   version: 2788f0dbd16903de03cb8186e5c7d97b69ad387b
 - name: github.com/magiconair/properties
-  version: 61b492c03cf472e0c6419be5899b8e0dc28b1b88
+  version: 0723e352fa358f9322c938cc2dadda874e9151a9
 - name: github.com/matttproud/golang_protobuf_extensions
   version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   subpackages:
@@ -119,7 +128,7 @@ imports:
 - name: github.com/pkg/errors
   version: 17b591df37844cde689f4d5813e5cea0927d8dd2
 - name: github.com/pkg/sftp
-  version: a71e8f580e3b622ebff585309160b1cc549ef4d2
+  version: 8197a2e580736b78d704be0fc47b2324c0591a32
 - name: github.com/prometheus/client_golang
   version: ea6e1db4cb8127eeb0b6954f7320363e5451820f
   subpackages:
@@ -132,41 +141,45 @@ imports:
   version: c25d279efa03dacfede108044f9506ce65c1992e
   subpackages:
   - expfmt
-  - model
-  - log
-  - route
   - internal/bitbucket.org/ww/goautoneg
+  - log
+  - model
+  - route
 - name: github.com/prometheus/procfs
   version: abf152e5f3e97f2fafac028d2cc06c1feb87ffa5
 - name: github.com/prometheus/prometheus
-  version: 24db241bd556fd45854dd310692ac291de7d24e1
+  version: 36fbdcc30fd13ad796381dc934742c559feeb1b5
   subpackages:
   - config
-  - promql
-  - retrieval
-  - rules
-  - storage/local
-  - storage/metric
-  - web
-  - retrieval/discovery
-  - util/httputil
-  - storage
-  - util/stats
-  - util/strutil
-  - util/testutil
-  - relabel
   - notifier
-  - template
-  - storage/local/codable
-  - storage/local/index
-  - util/flock
-  - web/api/v1
-  - web/ui
+  - promql
+  - relabel
+  - retrieval
+  - retrieval/discovery
   - retrieval/discovery/consul
   - retrieval/discovery/dns
   - retrieval/discovery/kubernetes
   - retrieval/discovery/marathon
+  - rules
+  - storage
+  - storage/local
+  - storage/local/codable
+  - storage/local/index
+  - storage/metric
+  - storage/remote
+  - storage/remote/graphite
+  - storage/remote/influxdb
+  - storage/remote/opentsdb
+  - template
+  - util/flock
+  - util/httputil
+  - util/stats
+  - util/strutil
+  - util/testutil
   - util/treecache
+  - web
+  - web/api/v1
+  - web/ui
 - name: github.com/rcrowley/go-metrics
   version: bdb33529eca3e55eac7328e07c57012a797af602
 - name: github.com/samuel/go-zookeeper
@@ -178,7 +191,7 @@ imports:
 - name: github.com/serialx/hashring
   version: 75d57fa264ad17fd929304dfdb02c8e278c5c01c
 - name: github.com/Shopify/sarama
-  version: e03d23b5a4fa1a72c30eace0403d7c2c3b5de55e
+  version: 482c471fbf73dc2ac66945187f811581f008c24a
 - name: github.com/Sirupsen/logrus
   version: 3ec0642a7fb6488f65b06f9040adc67e3990296a
 - name: github.com/spf13/afero
@@ -204,43 +217,56 @@ imports:
   version: 6ae1797c0b42b9323fc27ff7dcf568df88f2f33d
   subpackages:
   - leveldb
-  - leveldb/filter
-  - leveldb/iterator
-  - leveldb/opt
-  - leveldb/util
   - leveldb/cache
   - leveldb/comparer
   - leveldb/errors
+  - leveldb/filter
+  - leveldb/iterator
   - leveldb/journal
   - leveldb/memdb
+  - leveldb/opt
   - leveldb/storage
   - leveldb/table
+  - leveldb/util
 - name: github.com/vaughan0/go-ini
   version: a98ad7ee00ec53921f08832bc06ecf7fd600e6a1
 - name: golang.org/x/crypto
   version: 9e590154d2353f3f5e1b24da7275686040dcf491
-  repo: https://github.com/golang/crypto.git
-  vcs: git
   subpackages:
-  - pkcs12
-  - ssh
   - curve25519
   - ed25519
   - ed25519/internal/edwards25519
+  - ssh
 - name: golang.org/x/net
-  version: 1358eff22f0dd0c54fc521042cc607f6ff4b531a
+  version: 9313baa13d9262e49d07b20ed57dceafcd7240cc
   subpackages:
   - context
   - context/ctxhttp
+  - http2
+  - http2/hpack
+  - internal/timeseries
+  - lex/httplex
+  - trace
 - name: golang.org/x/sys
-  version: a646d33e2ee3172a661fc09bca23bb4889a41bc8
+  version: 30de6d19a3bd89a5f38ae4028e23aaa5582648af
   subpackages:
   - unix
 - name: golang.org/x/text
-  version: d074c16409f4f7aae134590a94a9c82b72f1cd1e
+  version: 1e65e9bf72c307081cea196f47ef37aed17eb316
   subpackages:
   - transform
   - unicode/norm
+- name: google.golang.org/grpc
+  version: 0e6ec3a4501ee9ee2d023abe92e436fd04ed4081
+  subpackages:
+  - codes
+  - credentials
+  - grpclog
+  - internal
+  - metadata
+  - naming
+  - peer
+  - transport
 - name: gopkg.in/fsnotify.v1
   version: a8a77c9133d2d6fd8334f3260d06f60e8d80a5fb
 - name: gopkg.in/inf.v0

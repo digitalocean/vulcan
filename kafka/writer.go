@@ -15,11 +15,9 @@
 package kafka
 
 import (
-	"bytes"
-
 	"github.com/Shopify/sarama"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 // Writer represents an object that encapsulates the behavior of a Kafka
@@ -52,21 +50,17 @@ type WriterConfig struct {
 }
 
 // Write sends metrics to the Kafka message bus.
-func (w *Writer) Write(key string, fams []*dto.MetricFamily) error {
-	buf := &bytes.Buffer{}
-	encoder := expfmt.NewEncoder(buf, expfmt.FmtText)
-	for _, f := range fams {
-		err := encoder.Encode(f)
-		if err != nil {
-			return err
-		}
+func (w *Writer) Write(key string, req *remote.WriteRequest) error {
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return err
 	}
 	// set key to "${job}::${instance}" so that messages from the same job-instance consistently
 	// go to the same kafka partition
-	_, _, err := w.producer.SendMessage(&sarama.ProducerMessage{
+	_, _, err = w.producer.SendMessage(&sarama.ProducerMessage{
 		Topic: w.topic,
 		Key:   sarama.StringEncoder(key),
-		Value: sarama.ByteEncoder(buf.Bytes()),
+		Value: sarama.ByteEncoder(data),
 	})
 	return err
 }

@@ -43,6 +43,7 @@ func main() {
 	vulcan.AddCommand(cmd.Indexer())
 	vulcan.AddCommand(cmd.Ingester)
 	vulcan.AddCommand(cmd.Querier())
+	vulcan.AddCommand(cmd.Forwarder())
 
 	vulcan.AddCommand(cmd.Version(hash, version))
 
