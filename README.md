@@ -79,7 +79,7 @@ Vulcan should strive to be API-compatible with Prometheus e.g. PromQL discussion
 
 ## Components
 
-### Forwarder [ NOT IMPLEMENTED ]
+### Forwarder
 
 A forwarder implements the Prometheus remote storage API. A forwarder should live close to a Prometheus server (even on the same machine). The forwarder consumes metrics from Prometheus and writes them into Vulcan in a format that Vulcan expects.
 
