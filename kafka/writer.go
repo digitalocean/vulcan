@@ -31,7 +31,7 @@ type Writer struct {
 func NewWriter(config *WriterConfig) (*Writer, error) {
 	cfg := sarama.NewConfig()
 	cfg.ClientID = config.ClientID
-	cfg.Producer.Compression = sarama.CompressionGZIP
+	cfg.Producer.Compression = sarama.CompressionSnappy
 	producer, err := sarama.NewSyncProducer(config.Addrs, cfg)
 	if err != nil {
 		return nil, err
