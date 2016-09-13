@@ -21,6 +21,7 @@ import (
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
 	"github.com/digitalocean/vulcan/storage"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"

@@ -15,14 +15,14 @@
 package indexer
 
 import (
-	"log"
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/storage"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -105,38 +105,58 @@ func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
 // Run starts the indexer process of consuming from the bus and indexing to
 // the target indexing system.
 func (i *Indexer) Run() error {
+	log.Info("running...")
 	ch := i.Source.Chan()
+
 	for payload := range ch {
+		log.WithFields(log.Fields{
+			"payload": payload.SampleGroup,
+		}).Debug("distributing sample group to workers")
+
 		i.indexSampleGroup(payload.SampleGroup)
 		payload.Done(nil)
 	}
+
 	return i.Source.Err()
 }
 
 func (i *Indexer) indexSampleGroup(sg bus.SampleGroup) {
-	t0 := time.Now()
-	wg := &sync.WaitGroup{}
+	var (
+		t0 = time.Now()
+		wg = &sync.WaitGroup{}
+	)
+
 	wg.Add(len(sg))
+
 	for _, s := range sg {
 		i.work <- workPayload{
 			s:  s,
 			wg: wg,
 		}
 	}
+
 	wg.Wait()
 	i.indexDurations.WithLabelValues("index_sample_group").Observe(float64(time.Since(t0).Nanoseconds()))
 }
 
 func (i *Indexer) worker() {
 	for w := range i.work {
-		t0 := time.Now()
+		var (
+			t0 = time.Now()
+			ll = log.WithFields(log.Fields{"sample": w.s})
+		)
+
+		ll.Debug("writing sample")
+
 		err := i.SampleIndexer.IndexSample(w.s)
 		w.wg.Done()
 		if err != nil {
-			log.Println(err)
+			ll.WithError(err).Error("could not write sample to index storage")
+
 			i.errorsTotal.WithLabelValues("index_sample").Add(1)
 			continue
 		}
+
 		i.indexDurations.WithLabelValues("index_sample").Observe(float64(time.Since(t0).Nanoseconds()))
 	}
 }

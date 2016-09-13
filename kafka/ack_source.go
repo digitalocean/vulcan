@@ -15,7 +15,6 @@
 package kafka
 
 import (
-	"bytes"
 	"log"
 	"sync"
 	"time"
@@ -41,7 +40,7 @@ type DefaultConverter struct{}
 
 // Convert implements Converter.
 func (dc DefaultConverter) Convert(msg *sarama.ConsumerMessage) (bus.SampleGroup, error) {
-	return convert.PromTextToSG(bytes.NewReader(msg.Value))
+	return convert.PromTextToSG(msg.Value)
 }
 
 // AckSource represents an object that processes SampleGroups received

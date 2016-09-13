@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/digitalocean/vulcan/kafka"
 	"github.com/digitalocean/vulcan/storage"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/olivere/elastic"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
@@ -40,6 +40,7 @@ func Indexer() *cobra.Command {
 		Use:   "indexer",
 		Short: "consumes metrics from the bus and makes them searchable",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			log.SetLevel(log.DebugLevel)
 			// bind pflags to viper so they are settable by env variables
 			cmd.Flags().VisitAll(func(f *pflag.Flag) {
 				viper.BindPFlag(f.Name, f)
@@ -89,7 +90,7 @@ func Indexer() *cobra.Command {
 				http.Handle("/metrics", prometheus.Handler())
 				http.ListenAndServe(":8080", nil)
 			}()
-			log.Println("running...")
+
 			return i.Run()
 		},
 	}

@@ -15,13 +15,13 @@
 package ingester
 
 import (
-	"log"
 	"sync"
 	"time"
 
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/storage"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -89,13 +89,18 @@ func NewIngester(config *Config) *Ingester {
 func (i *Ingester) worker() {
 	for w := range i.work {
 		t0 := time.Now()
+
+		log.WithFields(log.Fields{"sample": w.s}).Debug("writing sample")
+
 		err := i.sampleWriter.WriteSample(w.s)
 		w.wg.Done()
 		if err != nil {
-			log.Println(err)
+			log.WithError(err).Error("error writing sample to storage")
+
 			i.errorsTotal.WithLabelValues("write_sample").Add(1)
 			continue
 		}
+
 		i.ingesterDurations.WithLabelValues("write_sample").Observe(float64(time.Since(t0).Nanoseconds()))
 	}
 }
@@ -117,25 +122,36 @@ func (i *Ingester) Collect(ch chan<- prometheus.Metric) {
 // Run starts the ingesting process by consuming from the message bus and
 // writing to the data storage system.
 func (i *Ingester) Run() error {
-	log.Println("running...")
+	log.Info("running...")
 	ch := i.ackSource.Chan()
+
 	for payload := range ch {
+		log.WithFields(log.Fields{
+			"payload": payload.SampleGroup,
+		}).Debug("distributing sample group to workers")
+
 		i.writeSampleGroup(payload.SampleGroup)
 		payload.Done(nil)
 	}
+
 	return i.ackSource.Err()
 }
 
 func (i *Ingester) writeSampleGroup(sg bus.SampleGroup) {
-	t0 := time.Now()
-	wg := &sync.WaitGroup{}
+	var (
+		t0 = time.Now()
+		wg = &sync.WaitGroup{}
+	)
+
 	wg.Add(len(sg))
+
 	for _, s := range sg {
 		i.work <- workPayload{
 			s:  s,
 			wg: wg,
 		}
 	}
+
 	wg.Wait()
 	i.ingesterDurations.WithLabelValues("write_sample_group").Observe(float64(time.Since(t0).Nanoseconds()))
 }
