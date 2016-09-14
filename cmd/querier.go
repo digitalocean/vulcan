@@ -23,7 +23,6 @@ import (
 	"github.com/digitalocean/vulcan/storage/elasticsearch"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -35,10 +34,6 @@ func Querier() *cobra.Command {
 		Use:   "querier",
 		Short: "runs the query service that implements PromQL and prometheus v1 api",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// bind pflags to viper so they are settable by env variables
-			cmd.Flags().VisitAll(func(f *pflag.Flag) {
-				viper.BindPFlag(f.Name, f)
-			})
 			// create elasticsearch metric resolver
 			r, err := elasticsearch.NewResolver(&elasticsearch.ResolverConfig{
 				URL:   viper.GetString("es"),

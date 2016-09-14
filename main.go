@@ -15,9 +15,9 @@
 package main
 
 import (
-	"log"
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -38,7 +38,25 @@ func main() {
 	var vulcan = &cobra.Command{
 		Use:   "vulcan",
 		Short: "vulcan is a distributed prometheus service",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// viper.BindPFlags allows flags to be set by environment variables
+			if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
+				return err
+			}
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return err
+			}
+
+			// set the global log level
+			lvl, err := log.ParseLevel(viper.GetString("log-level"))
+			if err != nil {
+				return err
+			}
+			log.SetLevel(lvl)
+			return nil
+		},
 	}
+	vulcan.PersistentFlags().String("log-level", "info", "The level of logging (panic|fatal|error|warn|info|debug)")
 
 	vulcan.AddCommand(cmd.Indexer())
 	vulcan.AddCommand(cmd.Ingester)

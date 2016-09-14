@@ -23,10 +23,8 @@ import (
 	"github.com/digitalocean/vulcan/ingester"
 	"github.com/digitalocean/vulcan/kafka"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -37,12 +35,6 @@ var Ingester = &cobra.Command{
 	Use:   "ingester",
 	Short: "runs the ingester service to consume metrics from kafka into cassandra",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log.SetLevel(log.DebugLevel)
-		// bind pflags to viper so they are settable by env variables
-		cmd.Flags().VisitAll(func(f *pflag.Flag) {
-			viper.BindPFlag(f.Name, f)
-		})
-
 		// ensure cassandra tables
 		err := cassandra.SetupTables(strings.Split(viper.GetString("cassandra-addrs"), ","), viper.GetString("cassandra-keyspace"))
 		if err != nil {

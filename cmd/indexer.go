@@ -24,11 +24,9 @@ import (
 	"github.com/digitalocean/vulcan/kafka"
 	"github.com/digitalocean/vulcan/storage"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/olivere/elastic"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -40,12 +38,6 @@ func Indexer() *cobra.Command {
 		Use:   "indexer",
 		Short: "consumes metrics from the bus and makes them searchable",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.SetLevel(log.DebugLevel)
-			// bind pflags to viper so they are settable by env variables
-			cmd.Flags().VisitAll(func(f *pflag.Flag) {
-				viper.BindPFlag(f.Name, f)
-			})
-
 			// get kafka source
 			source, err := kafka.NewAckSource(&kafka.AckSourceConfig{
 				Addrs:     strings.Split(viper.GetString("kafka-addrs"), ","),
