@@ -26,7 +26,6 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -38,12 +37,6 @@ func Forwarder() *cobra.Command {
 		Use:   "forwarder",
 		Short: "forwards metric received from prometheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.SetLevel(log.DebugLevel)
-
-			cmd.Flags().VisitAll(func(f *pflag.Flag) {
-				viper.BindPFlag(f.Name, f)
-			})
-
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
 				ClientID: viper.GetString("kafka-client-id"),
