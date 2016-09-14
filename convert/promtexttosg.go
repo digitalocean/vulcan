@@ -33,8 +33,7 @@ func PromTextToSG(in []byte) (bus.SampleGroup, error) {
 		return nil, err
 	}
 
-	sg := writeRequestToSampleGroup(wr)
-	return sg, nil
+	return writeRequestToSampleGroup(wr), nil
 }
 
 func writeRequestToSampleGroup(wr *remote.WriteRequest) bus.SampleGroup {

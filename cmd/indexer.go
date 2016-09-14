@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -56,8 +57,22 @@ func Indexer() *cobra.Command {
 				return err
 			}
 
+			// custom client used so we can more effeciently reuse connections.
+			customClient := &http.Client{
+				Transport: &http.Transport{
+					Dial: func(network, addr string) (net.Conn, error) {
+						return net.Dial(network, addr)
+					},
+					MaxIdleConnsPerHost: indexer.NumIndexGoroutines,
+				},
+			}
+
 			// allow sniff to be set because in some networking environments sniffing doesn't work. Should be allowed in prod
-			client, err := elastic.NewClient(elastic.SetURL(viper.GetString("es")), elastic.SetSniff(viper.GetBool("es-sniff")))
+			client, err := elastic.NewClient(
+				elastic.SetURL(viper.GetString("es")),
+				elastic.SetSniff(viper.GetBool("es-sniff")),
+				elastic.SetHttpClient(customClient),
+			)
 			if err != nil {
 				return err
 			}

@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	numIndexGoroutines = 400
+	// NumIndexGoroutines indicates the number of workers threads for writing.
+	NumIndexGoroutines = 400
 )
 
 type workPayload struct {
@@ -80,7 +81,7 @@ func NewIndexer(config *Config) *Indexer {
 		),
 		work: make(chan workPayload),
 	}
-	for n := 0; n < numIndexGoroutines; n++ {
+	for n := 0; n < NumIndexGoroutines; n++ {
 		go i.worker()
 	}
 	return i
