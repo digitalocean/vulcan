@@ -25,11 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const (
-	// NumIndexGoroutines indicates the number of workers threads for writing.
-	NumIndexGoroutines = 400
-)
-
 type workPayload struct {
 	s  *bus.Sample
 	wg *sync.WaitGroup
@@ -42,17 +37,19 @@ type Indexer struct {
 	Source        bus.AckSource
 	SampleIndexer storage.SampleIndexer
 
-	indexDurations *prometheus.SummaryVec
-	errorsTotal    *prometheus.CounterVec
-	work           chan workPayload
+	indexDurations     *prometheus.SummaryVec
+	errorsTotal        *prometheus.CounterVec
+	work               chan workPayload
+	numIndexGoroutines int
 }
 
 // Config represents the configuration of an Indexer.  It takes an implmenter
 // Acksource of the target message bus and an implmenter of SampleIndexer of
 // the target indexing system.
 type Config struct {
-	Source        bus.AckSource
-	SampleIndexer storage.SampleIndexer
+	Source             bus.AckSource
+	SampleIndexer      storage.SampleIndexer
+	NumIndexGoroutines int
 }
 
 // NewIndexer creates a new instance of an Indexer.
@@ -79,9 +76,10 @@ func NewIndexer(config *Config) *Indexer {
 			},
 			[]string{"stage"},
 		),
-		work: make(chan workPayload),
+		work:               make(chan workPayload),
+		numIndexGoroutines: config.NumIndexGoroutines,
 	}
-	for n := 0; n < NumIndexGoroutines; n++ {
+	for n := 0; n < i.numIndexGoroutines; n++ {
 		go i.worker()
 	}
 	return i
