@@ -3,8 +3,8 @@ go:
   - 1.7
 before_install:
   - go get github.com/golang/lint/golint
-  - curl -fsSL https://github.com/Masterminds/glide/releases/download/v0.11.1/glide-v0.11.1-linux-amd64.tar.gz -o glide.tar.gz
-  - echo "de0c7870738c6bc11128761d53a99ad68687b0a213fe52cea15ad05d93f10e42  glide.tar.gz" | sha256sum -c -
+  - curl -fsSL https://github.com/Masterminds/glide/releases/download/v0.12.2/glide-v0.12.2-linux-amd64.tar.gz -o glide.tar.gz
+  - echo "edd398b4e94116b289b9494d1c13ec2ea37386bad4ada91ecc9825f96b12143c  glide.tar.gz" | sha256sum -c -
   - tar -xf glide.tar.gz --strip-components=1 -C "$GOPATH/bin" linux-amd64/glide
   - rm glide.tar.gz
 
