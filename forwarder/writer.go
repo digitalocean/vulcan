@@ -80,7 +80,7 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 
 		ll.WithFields(log.Fields{
 			"timeseries_count": len(wr.Timeseries),
-		}).Info("writing to bus")
+		}).Debug("writing to bus")
 
 		if err := f.writer.Write(key, wr); err != nil {
 			ll.WithError(err).Error("failed to write to bus")
