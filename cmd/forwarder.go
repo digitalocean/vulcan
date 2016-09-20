@@ -16,7 +16,9 @@ package cmd
 
 import (
 	"net"
+	"net/http"
 	"strings"
+	"sync"
 
 	"google.golang.org/grpc"
 
@@ -24,9 +26,20 @@ import (
 	"github.com/digitalocean/vulcan/kafka"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	flagAddress          = "address"
+	flagKafkaTopic       = "kafka-topic"
+	flagKafkaAddrs       = "kafka-addrs"
+	flagKafkaClientID    = "kafka-client-id"
+	flagTelemetryPath    = "telemetry-path"
+	flagWebListenAddress = "web-listen-address"
 )
 
 // Forwarder handles parsing the command line options, initializes, and starts the
@@ -37,46 +50,78 @@ func Forwarder() *cobra.Command {
 		Use:   "forwarder",
 		Short: "forwards metric received from prometheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			reg := prometheus.NewRegistry()
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
-				ClientID: viper.GetString("kafka-client-id"),
-				Topic:    viper.GetString("kafka-topic"),
-				Addrs:    strings.Split(viper.GetString("kafka-addrs"), ","),
+				ClientID: viper.GetString(flagKafkaClientID),
+				Topic:    viper.GetString(flagKafkaTopic),
+				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
 			})
 			if err != nil {
 				return err
 			}
 
 			log.WithFields(log.Fields{
-				"kafka_client_id": viper.GetString("kafka-client-id"),
-				"kafka_topic":     viper.GetString("kafka-topic"),
-				"kafka_addresses": viper.GetString("kafka-addrs"),
+				"kafka_client_id": viper.GetString(flagKafkaClientID),
+				"kafka_topic":     viper.GetString(flagKafkaTopic),
+				"kafka_addresses": viper.GetString(flagKafkaAddrs),
 			}).Info("registered as kafka producer")
 
-			bw := forwarder.NewForwarder(&forwarder.Config{Writer: w})
-
-			d := forwarder.NewDecompressor()
-
-			lis, err := net.Listen("tcp", viper.GetString("address"))
+			fwd := forwarder.NewForwarder(&forwarder.Config{
+				Writer: w,
+			})
+			err = reg.Register(fwd)
 			if err != nil {
 				return err
 			}
 
-			server := grpc.NewServer(grpc.RPCDecompressor(d))
-			remote.RegisterWriteServer(server, bw)
+			d := forwarder.NewDecompressor()
 
-			log.WithFields(log.Fields{
-				"listening_address": viper.GetString("address"),
-			}).Info("starting vulcan forwarder service")
+			lis, err := net.Listen("tcp", viper.GetString(flagAddress))
+			if err != nil {
+				return err
+			}
+			// start both gRPC and http servers and return as soon as either of them have an
+			// error. It is expected that these two servers will either return an error, or run
+			// indefinitely. This will be easier to handle when Prometheus moves away from gRPC
+			// and to an HTTP POST for the generic write API https://github.com/prometheus/prometheus/pull/1957
+			errCh := make(chan error)
+			once := sync.Once{}
+			go func() {
+				server := grpc.NewServer(grpc.RPCDecompressor(d))
+				remote.RegisterWriteServer(server, fwd)
 
-			return server.Serve(lis)
+				log.WithFields(log.Fields{
+					"listening_address": viper.GetString(flagAddress),
+				}).Info("starting vulcan forwarder gRPC service")
+				if err := server.Serve(lis); err != nil {
+					once.Do(func() {
+						errCh <- err
+					})
+				}
+			}()
+			go func() {
+				log.WithFields(log.Fields{
+					"listening_address": viper.GetString(flagWebListenAddress),
+					"telemetry_path":    viper.GetString(flagTelemetryPath),
+				}).Info("starting http server for telemetry")
+				http.Handle(viper.GetString(flagTelemetryPath), promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+				if err := http.ListenAndServe(viper.GetString(flagWebListenAddress), nil); err != nil {
+					once.Do(func() {
+						errCh <- err
+					})
+				}
+			}()
+			return <-errCh
 		},
 	}
 
-	f.Flags().String("address", ":8888", "grpc server listening address")
-	f.Flags().String("kafka-topic", "vulcan", "kafka topic to write to")
-	f.Flags().String("kafka-addrs", "", "one.example.com:9092,two.example.com:9092")
-	f.Flags().String("kafka-client-id", "vulcan-forwarder", "set the kafka client id")
+	f.Flags().String(flagAddress, ":8888", "grpc server listening address")
+	f.Flags().String(flagKafkaTopic, "vulcan", "kafka topic to write to")
+	f.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	f.Flags().String(flagKafkaClientID, "vulcan-forwarder", "set the kafka client id")
+	f.Flags().String(flagTelemetryPath, "/metrics", "path under which to expose metrics")
+	f.Flags().String(flagWebListenAddress, ":9031", "address to listen on for telemetry")
 
 	return f
 }
