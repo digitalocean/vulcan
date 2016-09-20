@@ -16,6 +16,7 @@ package forwarder
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/net/context"
 
@@ -23,8 +24,14 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/remote"
+)
+
+const (
+	namespace = "vulcan"
+	subsystem = "forwarder"
 )
 
 // Forwarder represents an object that accepts metrics from Prometheus.
@@ -32,6 +39,8 @@ import (
 // Vulcan message bus.
 type Forwarder struct {
 	writer bus.Writer
+
+	writeBatchDuration prometheus.Histogram
 }
 
 var _ remote.WriteServer = &Forwarder{}
@@ -45,7 +54,28 @@ type Config struct {
 func NewForwarder(config *Config) *Forwarder {
 	return &Forwarder{
 		writer: config.Writer,
+		writeBatchDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "write_batch_duration_seconds",
+				Help:      "Duration of write batch calls.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
 	}
+}
+
+// Describe implements prometheus.Collector which makes the forwarder
+// registrable to prometheus instrumentation.
+func (f *Forwarder) Describe(ch chan<- *prometheus.Desc) {
+	f.writeBatchDuration.Describe(ch)
+}
+
+// Collect implements prometheus.Collector which makes the forwarder
+// registrable to prometheus instrumentation.
+func (f *Forwarder) Collect(ch chan<- prometheus.Metric) {
+	f.writeBatchDuration.Collect(ch)
 }
 
 // Write implements remote.WriteServer interface.
@@ -82,11 +112,11 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 			"timeseries_count": len(wr.Timeseries),
 		}).Debug("writing to bus")
 
+		t0 := time.Now()
 		if err := f.writer.Write(key, wr); err != nil {
 			ll.WithError(err).Error("failed to write to bus")
-
-			continue
 		}
+		f.writeBatchDuration.Observe(time.Since(t0).Seconds())
 	}
 
 	return &remote.WriteResponse{}, nil
