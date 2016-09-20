@@ -1,8 +1,8 @@
 FROM golang:1.6.3-wheezy
 
 ENV GLIDEPATH /glide
-ENV GLIDE_DOWNLOAD_URL https://github.com/Masterminds/glide/releases/download/v0.11.1/glide-v0.11.1-linux-amd64.tar.gz
-ENV GLIDE_DOWNLOAD_SHA256 de0c7870738c6bc11128761d53a99ad68687b0a213fe52cea15ad05d93f10e42
+ENV GLIDE_DOWNLOAD_URL https://github.com/Masterminds/glide/releases/download/v0.12.2/glide-v0.12.2-linux-amd64.tar.gz
+ENV GLIDE_DOWNLOAD_SHA256 edd398b4e94116b289b9494d1c13ec2ea37386bad4ada91ecc9825f96b12143c
 
 RUN mkdir -p $GLIDEPATH \
  && curl -fsSL $GLIDE_DOWNLOAD_URL -o glide.tar.gz \
