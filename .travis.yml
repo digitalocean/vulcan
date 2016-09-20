@@ -13,3 +13,7 @@ script:
   - make vet
   - make lint
   - make
+
+cache:
+  directories:
+    - $HOME/.glide/cache
