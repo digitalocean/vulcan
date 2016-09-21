@@ -37,9 +37,8 @@ type Ingester struct {
 // Config provides the ingester the necessary dependencies it needs to read
 // TimeSeries from the bus and write Samples.
 type Config struct {
-	NumWorkers   int
-	SampleWriter storage.SampleWriter
-	Source       bus.Source
+	Source bus.Source
+	Writer Writer
 }
 
 // NewIngester creates a new instance of Ingester.
