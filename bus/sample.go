@@ -14,7 +14,8 @@
 
 package bus
 
-// Sample is a metric and a single associated datapoint
+// Sample is a metric and a single associated datapoint.
+// Deprecated in favor of model.TimeSeries
 type Sample struct {
 	Metric    Metric
 	Datapoint Datapoint

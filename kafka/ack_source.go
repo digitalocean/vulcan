@@ -45,6 +45,7 @@ func (dc DefaultConverter) Convert(msg *sarama.ConsumerMessage) (bus.SampleGroup
 
 // AckSource represents an object that processes SampleGroups received
 // from the Kafka message bus.
+// Deprecated in favor of kafka.Source.
 type AckSource struct {
 	Converter Converter
 

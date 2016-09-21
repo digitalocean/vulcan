@@ -59,7 +59,7 @@ func main() {
 	vulcan.PersistentFlags().String("log-level", "info", "The level of logging (panic|fatal|error|warn|info|debug)")
 
 	vulcan.AddCommand(cmd.Indexer())
-	vulcan.AddCommand(cmd.Ingester)
+	vulcan.AddCommand(cmd.Ingester())
 	vulcan.AddCommand(cmd.Querier())
 	vulcan.AddCommand(cmd.Forwarder())
 

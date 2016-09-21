@@ -14,5 +14,6 @@
 
 package bus
 
-// SampleGroup is a list of samples
+// SampleGroup is a list of samples.
+// Deprecated in favor of model.TimeSeriesBatch.
 type SampleGroup []*Sample

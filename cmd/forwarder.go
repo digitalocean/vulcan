@@ -34,12 +34,20 @@ import (
 )
 
 const (
-	flagAddress          = "address"
-	flagKafkaTopic       = "kafka-topic"
-	flagKafkaAddrs       = "kafka-addrs"
-	flagKafkaClientID    = "kafka-client-id"
-	flagTelemetryPath    = "telemetry-path"
-	flagWebListenAddress = "web-listen-address"
+	flagAddress             = "address"
+	flagCassandraAddrs      = "cassandra-addrs"
+	flagCassandraKeyspace   = "cassandra-keyspace"
+	flagCassandraTimeout    = "cassandra-timeout"
+	flagCassandraNumConns   = "cassandra-num-conns"
+	flagKafkaAddrs          = "kafka-addrs"
+	flagKafkaClientID       = "kafka-client-id"
+	flagKafkaGroupID        = "kafka-group-id"
+	flagKafkaTopic          = "kafka-topic"
+	flagNumCassandraWorkers = "num-cassandra-workers"
+	flagNumKafkaWorkers     = "num-kafka-workers"
+	flagNumWorkers          = "num-workers"
+	flagTelemetryPath       = "telemetry-path"
+	flagWebListenAddress    = "web-listen-address"
 )
 
 // Forwarder handles parsing the command line options, initializes, and starts the

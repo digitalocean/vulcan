@@ -34,6 +34,7 @@ type AckPayload struct {
 // is closed. The caller should call Err() after the channel is closed.
 // Err() will return nil if the source closed without error, otherwise
 // it will return the first error encountered.
+// DEPRECATED in favor of bus.Source
 type AckSource interface {
 	Chan() <-chan AckPayload
 	Err() error

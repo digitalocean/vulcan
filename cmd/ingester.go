@@ -22,6 +22,7 @@ import (
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/ingester"
 	"github.com/digitalocean/vulcan/kafka"
+	"github.com/gocql/gocql"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
@@ -29,58 +30,58 @@ import (
 )
 
 // Ingester handles parsing the command line options, initializes, and starts the
-// ingester service accordingling.  It is the entry point for the Ingester
-// service.
-var Ingester = &cobra.Command{
-	Use:   "ingester",
-	Short: "runs the ingester service to consume metrics from kafka into cassandra",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// ensure cassandra tables
-		err := cassandra.SetupTables(strings.Split(viper.GetString("cassandra-addrs"), ","), viper.GetString("cassandra-keyspace"))
-		if err != nil {
-			return err
-		}
+// ingester service accordingling.
+func Ingester() *cobra.Command {
+	ingcmd := &cobra.Command{
+		Use:   "ingester",
+		Short: "runs the ingester service to consume metrics from kafka into cassandra",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cluster := gocql.NewCluster(strings.Split(viper.GetString(flagCassandraAddrs), ",")...)
+			cluster.Keyspace = viper.GetString(flagCassandraKeyspace)
+			cluster.Timeout = viper.GetDuration(flagCassandraTimeout)
+			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
+			cluster.Consistency = gocql.LocalOne
+			cluster.ProtoVersion = 4
+			sess, err := cluster.CreateSession()
+			if err != nil {
+				return err
+			}
+			w := cassandra.NewWriter(&cassandra.WriterConfig{
+				NumWorkers: viper.GetInt(flagNumCassandraWorkers),
+				Session:    sess,
+			})
+			s, err := kafka.NewSource(&kafka.SourceConfig{
+				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				ClientID: viper.GetString(flagKafkaClientID),
+				GroupID:  viper.GetString(flagKafkaGroupID),
+				Topics:   []string{viper.GetString(flagKafkaTopic)},
+			})
+			if err != nil {
+				return err
+			}
+			i := &ingester.Ingester{
+				NumWorkers: viper.GetInt(flagNumKafkaWorkers),
+				Source:     s,
+				Writer:     w,
+			}
+			go func() {
+				http.Handle("/metrics", prometheus.Handler())
+				http.ListenAndServe(":8080", nil)
+			}()
+			return i.Run()
+		},
+	}
 
-		// create cassandra sample writer
-		sw, err := cassandra.NewSampleWriter(&cassandra.SampleWriterConfig{
-			CassandraAddrs: strings.Split(viper.GetString("cassandra-addrs"), ","),
-			Keyspace:       viper.GetString("cassandra-keyspace"),
-			Timeout:        30 * time.Second,
-		})
-		if err != nil {
-			return err
-		}
+	ingcmd.Flags().Duration(flagCassandraTimeout, time.Second*2, "cassandra timeout duration")
+	ingcmd.Flags().Int(flagCassandraNumConns, 2, "number of connections to cassandra per node")
+	ingcmd.Flags().Int(flagNumCassandraWorkers, 200, "number of ingester goroutines to write to cassandra")
+	ingcmd.Flags().Int(flagNumKafkaWorkers, 30, "number of ingester goroutines to process kafka messages")
+	ingcmd.Flags().String(flagCassandraAddrs, "", "one.example.com:9092,two.example.com:9092")
+	ingcmd.Flags().String(flagCassandraKeyspace, "vulcan", "cassandra keyspace to use")
+	ingcmd.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	ingcmd.Flags().String(flagKafkaClientID, "vulcan-ingest", "set the kafka client id")
+	ingcmd.Flags().String(flagKafkaGroupID, "vulcan-ingester", "workers with the same groupID will join the same Kafka ConsumerGroup")
+	ingcmd.Flags().String(flagKafkaTopic, "vulcan", "set the kafka topic to consume")
 
-		// create kafka source
-		source, err := kafka.NewAckSource(&kafka.AckSourceConfig{
-			Addrs:     strings.Split(viper.GetString("kafka-addrs"), ","),
-			ClientID:  viper.GetString("kafka-client-id"),
-			Converter: kafka.DefaultConverter{},
-			Topic:     viper.GetString("kafka-topic"),
-		})
-		if err != nil {
-			return err
-		}
-		prometheus.MustRegister(source)
-
-		// create and start ingester
-		i := ingester.NewIngester(&ingester.Config{
-			SampleWriter: sw,
-			AckSource:    source,
-		})
-		prometheus.MustRegister(i)
-		go func() {
-			http.Handle("/metrics", prometheus.Handler())
-			http.ListenAndServe(":8080", nil)
-		}()
-		return i.Run()
-	},
-}
-
-func init() {
-	Ingester.Flags().String("cassandra-addrs", "", "one.example.com:9092,two.example.com:9092")
-	Ingester.Flags().String("cassandra-keyspace", "vulcan", "cassandra keyspace to use")
-	Ingester.Flags().String("kafka-addrs", "", "one.example.com:9092,two.example.com:9092")
-	Ingester.Flags().String("kafka-client-id", "vulcan-ingest", "set the kafka client id")
-	Ingester.Flags().String("kafka-topic", "vulcan", "set the kafka topic to consume")
+	return ingcmd
 }
