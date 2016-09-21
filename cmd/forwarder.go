@@ -17,8 +17,12 @@ package cmd
 import (
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -58,13 +62,23 @@ func Forwarder() *cobra.Command {
 		Use:   "forwarder",
 		Short: "forwards metric received from prometheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reg := prometheus.NewRegistry()
+			var (
+				reg     = prometheus.NewRegistry()
+				signals = make(chan os.Signal, 1)
+			)
+
+			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
 				ClientID: viper.GetString(flagKafkaClientID),
 				Topic:    viper.GetString(flagKafkaTopic),
 				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
 			})
+			if err != nil {
+				return err
+			}
+
+			err = reg.Register(w)
 			if err != nil {
 				return err
 			}
@@ -78,6 +92,7 @@ func Forwarder() *cobra.Command {
 			fwd := forwarder.NewForwarder(&forwarder.Config{
 				Writer: w,
 			})
+
 			err = reg.Register(fwd)
 			if err != nil {
 				return err
@@ -120,6 +135,16 @@ func Forwarder() *cobra.Command {
 					})
 				}
 			}()
+
+			// listen for signals so can gracefully stop kakfa producer
+			go func() {
+				for _ = range signals {
+					w.Stop()
+					time.Sleep(2 * time.Second)
+					os.Exit(0)
+				}
+			}()
+
 			return <-errCh
 		},
 	}
