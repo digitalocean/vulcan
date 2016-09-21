@@ -14,7 +14,11 @@
 
 package bus
 
-import "github.com/prometheus/common/model"
+import (
+	"encoding/json"
+
+	"github.com/prometheus/common/model"
+)
 
 // Sample is a single value at a time.
 type Sample struct {
@@ -33,6 +37,25 @@ func (ts *TimeSeries) Name() string {
 	return ts.Labels[model.MetricNameLabel]
 }
 
-// TimeSeriesBatch is a group of one or more TimeSeries that are processed
-// together for performance reasons.
+// ID is a consistent string based on the Labels of this TimeSeries that can
+// also be parsed to recreate the original Labels. For this, we use JSON and
+// leverage golang sorting map keys while marshalling to JSON:
+// https://github.com/golang/go/blob/release-branch.go1.7/src/encoding/json/encode.go#L121-L127
+func (ts *TimeSeries) ID() string {
+	b, err := json.Marshal(ts.Labels)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// TimeSeriesBatch is a group of TimeSeries that are processed together
+// for performance reasons.
 type TimeSeriesBatch []*TimeSeries
+
+// LabelsFromTimeSeriesID parses the Labels for a TimeSeries from a TimeSeries ID.
+func LabelsFromTimeSeriesID(id string) (map[string]string, error) {
+	l := map[string]string{}
+	err := json.Unmarshal([]byte(id), &l)
+	return l, err
+}

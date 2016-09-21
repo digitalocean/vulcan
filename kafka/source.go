@@ -15,7 +15,6 @@
 package kafka
 
 import (
-	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/golang/protobuf/proto"
@@ -39,10 +38,9 @@ type Source struct {
 
 // NewSource creates and starts a Kafka source.
 func NewSource(config *SourceConfig) (*Source, error) {
-	c, err := cluster.NewConsumer(config.Addrs, config.GroupID, config.Topics, cluster.Config{
-		ClientID: config.ClientID,
-		Version:  sarama.V0_9_0_0, // we use Kafka group consumer >0.9 semantics
-	})
+	kcfg := cluster.NewConfig()
+	kcfg.ClientID = config.ClientID
+	c, err := cluster.NewConsumer(config.Addrs, config.GroupID, config.Topics, kcfg)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +48,8 @@ func NewSource(config *SourceConfig) (*Source, error) {
 		c: c,
 		m: make(chan *bus.SourcePayload),
 	}
+	go s.run()
+	return s, nil
 }
 
 // Error SHOULD ONLY be called AFTER the messages channel has closed.
@@ -65,7 +65,7 @@ func (s *Source) Error() error {
 // error or the stream finishes. The caller SHOULD call Error() after
 // the channel closes to determine if the channel closed because of
 // an error or not.
-func (s *Source) Messages() <-chan *SourcePayload {
+func (s *Source) Messages() <-chan *bus.SourcePayload {
 	return s.m
 }
 
@@ -92,7 +92,7 @@ func parseTimeSeriesBatch(in []byte) (bus.TimeSeriesBatch, error) {
 	if err := proto.Unmarshal(in, wr); err != nil {
 		return nil, err
 	}
-	tsb := make(bus.TimeSeriesBatch, 0, len(wr))
+	tsb := make(bus.TimeSeriesBatch, 0, len(wr.Timeseries))
 	for _, protots := range wr.Timeseries {
 		ts := &bus.TimeSeries{
 			Labels:  map[string]string{},

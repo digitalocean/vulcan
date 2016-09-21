@@ -25,65 +25,36 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const (
-	numIngestGoroutines = 400
-)
-
-type workPayload struct {
-	s  *bus.Sample
-	wg *sync.WaitGroup
-}
-
 // Ingester represents an object that consumes metrics from a bus and writes
 // them to a data storage.
 type Ingester struct {
 	prometheus.Collector
 
-	sampleWriter storage.SampleWriter
-	ackSource    bus.AckSource
-
-	ingesterDurations *prometheus.SummaryVec
-	errorsTotal       *prometheus.CounterVec
-	work              chan workPayload
+	src bus.Source
+	w   storage.SampleWriter
 }
 
-// Config represents the configuration of an Ingester.  It requires an
-// AckSource implementer for the target message bus and a SampleWriter
-// implementer of the data storage system.
+// Config provides the ingester the necessary dependencies it needs to read
+// TimeSeries from the bus and write Samples.
 type Config struct {
+	NumWorkers   int
 	SampleWriter storage.SampleWriter
-	AckSource    bus.AckSource
+	Source       bus.Source
 }
 
 // NewIngester creates a new instance of Ingester.
 func NewIngester(config *Config) *Ingester {
-	i := &Ingester{
-		sampleWriter: config.SampleWriter,
-		ackSource:    config.AckSource,
-		ingesterDurations: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace: "vulcan",
-				Subsystem: "ingester",
-				Name:      "duration_nanoseconds",
-				Help:      "Durations of ingester stages",
-			},
-			[]string{"stage"},
-		),
-		errorsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: "vulcan",
-				Subsystem: "ingester",
-				Name:      "errors_total",
-				Help:      "Count of errors total of ingester stages",
-			},
-			[]string{"stage"},
-		),
-		work: make(chan workPayload),
+
+}
+
+// Run blocks until an error occurs and should be called only once.
+func (i *Ingester) Run() error {
+	once := sync.Once{}
+	for n := 0; n < i.numWorkers; i++ {
+		go func() {
+
+		}()
 	}
-	for n := 0; n < numIngestGoroutines; n++ {
-		go i.worker()
-	}
-	return i
 }
 
 func (i *Ingester) worker() {
