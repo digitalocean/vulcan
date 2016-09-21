@@ -14,8 +14,25 @@
 
 package bus
 
-// Datapoint is 128 bits of time and a value
-type Datapoint struct {
-	Timestamp Timestamp
-	Value     float64
+import "github.com/prometheus/common/model"
+
+// Sample is a single value at a time.
+type Sample struct {
+	TimestampMS int64
+	Value       float64
 }
+
+// TimeSeries is an identifying set of labels and one or more samples.
+type TimeSeries struct {
+	Labels  map[string]string
+	Samples []*Sample
+}
+
+// Name returns the metric name for the TimeSeries stored as a special label.
+func (ts *TimeSeries) Name() string {
+	return ts.Labels[model.MetricNameLabel]
+}
+
+// TimeSeriesBatch is a group of one or more TimeSeries that are processed
+// together for performance reasons.
+type TimeSeriesBatch []*TimeSeries

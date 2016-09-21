@@ -17,6 +17,7 @@ package bus
 import "github.com/prometheus/prometheus/storage/remote"
 
 // Writer is an interface that wraps the Write method to a message bus.
+// TODO: instead of accepting *remote.WriteRequest, accept a TimeSeriesBatch
 type Writer interface {
 	Write(key string, req *remote.WriteRequest) error
 }
