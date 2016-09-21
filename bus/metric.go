@@ -19,6 +19,7 @@ package bus
 // TODO each prometheus metric also has a type (counter, gauge...) we should
 // probably make this a field in the Metric struct. Right now the type is
 // recorded as a label named "__type__".
+// Deprecated in favor of model.TimeSeries
 type Metric struct {
 	Name   string
 	Labels map[string]string

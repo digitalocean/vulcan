@@ -36,6 +36,7 @@ const (
 
 // SampleWriter represents an object that writes bus messages to the target
 // Cassandra database.
+// Deprecated in favor of cassandra.Writer
 type SampleWriter struct {
 	sess *gocql.Session
 }

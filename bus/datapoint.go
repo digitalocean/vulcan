@@ -14,7 +14,8 @@
 
 package bus
 
-// Datapoint is 128 bits of time and a value
+// Datapoint is 128 bits of time and a value.
+// Deprecated.
 type Datapoint struct {
 	Timestamp Timestamp
 	Value     float64
