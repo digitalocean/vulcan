@@ -25,29 +25,14 @@ import (
 // Ingester consumes TimeSeriesBatch from a source and writes them at a
 // specified level of concurrency.
 type Ingester struct {
-	n int
-	s bus.Source
-	w Writer
-}
-
-// Config is used to create an Ingester.
-type Config struct {
 	NumWorkers int
 	Source     bus.Source
 	Writer     Writer
 }
 
-func NewIngester(config *Config) (*Ingester, error) {
-	return &Ingester{
-		n: config.NumWorkers,
-		s: config.Source,
-		w: config.Writer,
-	}, nil
-}
-
 // Run executes until an error occurs.
 func (i *Ingester) Run() error {
-	log.WithField("num_workers", i.n).Info("starting workers")
+	log.WithField("num_workers", i.NumWorkers).Info("starting workers")
 
 	var (
 		once     sync.Once
@@ -55,12 +40,12 @@ func (i *Ingester) Run() error {
 		wg       sync.WaitGroup
 	)
 	done := make(chan struct{})
-	ch := i.s.Messages()
-	wg.Add(i.n)
-	for n := 0; n < i.n; n++ {
+	ch := i.Source.Messages()
+	wg.Add(i.NumWorkers)
+	for n := 0; n < i.NumWorkers; n++ {
 		go func() {
 			defer wg.Done()
-			err := work(done, ch, i.w)
+			err := work(done, ch, i.Writer)
 			if err != nil {
 				once.Do(func() {
 					close(done)
@@ -75,7 +60,7 @@ func (i *Ingester) Run() error {
 		return outerErr
 	}
 	// return error that caused Source to stop
-	return i.s.Error()
+	return i.Source.Error()
 }
 
 func work(done <-chan struct{}, ch <-chan *bus.SourcePayload, w Writer) error {

@@ -59,13 +59,10 @@ func Ingester() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := ingester.NewIngester(&ingester.Config{
+			i := &ingester.Ingester{
 				NumWorkers: viper.GetInt(flagNumKafkaWorkers),
 				Source:     s,
 				Writer:     w,
-			})
-			if err != nil {
-				return err
 			}
 			go func() {
 				http.Handle("/metrics", prometheus.Handler())
