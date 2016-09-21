@@ -25,3 +25,5 @@ import:
 - package: github.com/spf13/viper
 - package: github.com/pkg/errors
   version: 0.7.0
+- package: github.com/bsm/sarama-cluster
+  version: v2.1.1
