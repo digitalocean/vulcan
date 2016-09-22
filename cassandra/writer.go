@@ -16,16 +16,43 @@ package cassandra
 
 import (
 	"sync"
+	"time"
 
 	"github.com/digitalocean/vulcan/model"
 	"github.com/gocql/gocql"
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	namespace = "vulcan"
+	subsystem = "cassandra"
 )
 
 // Writer implements ingester.Writer to persist TimeSeriesBatch samples
 // to Cassandra.
 type Writer struct {
+	prometheus.Collector
+
 	s  *gocql.Session
 	ch chan *writerPayload
+
+	batchWriteDuration  prometheus.Histogram
+	sampleWriteDuration prometheus.Histogram
+	workerCount         *prometheus.GaugeVec
+}
+
+// Describe implements prometheus.Collector.
+func (w *Writer) Describe(ch chan<- *prometheus.Desc) {
+	w.batchWriteDuration.Describe(ch)
+	w.sampleWriteDuration.Describe(ch)
+	w.workerCount.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (w *Writer) Collect(ch chan<- prometheus.Metric) {
+	w.batchWriteDuration.Collect(ch)
+	w.sampleWriteDuration.Collect(ch)
+	w.workerCount.Collect(ch)
 }
 
 type writerPayload struct {
@@ -48,6 +75,34 @@ func NewWriter(config *WriterConfig) *Writer {
 	w := &Writer{
 		s:  config.Session,
 		ch: make(chan *writerPayload),
+
+		batchWriteDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "batch_write_duration_seconds",
+				Help:      "Histogram of seconds elapsed to write a batch.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		sampleWriteDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "sample_write_duration_seconds",
+				Help:      "Histogram of seconds elapsed to write a sample.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		workerCount: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "worker_count",
+				Help:      "Count of workers.",
+			},
+			[]string{"mode"},
+		),
 	}
 	for n := 0; n < config.NumWorkers; n++ {
 		go w.worker()
@@ -58,6 +113,10 @@ func NewWriter(config *WriterConfig) *Writer {
 // Write implements the ingester.Write interface and allows the
 // ingester to write TimeSeriesBatch to Cassandra.
 func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
+	t0 := time.Now()
+	defer func() {
+		w.batchWriteDuration.Observe(time.Since(t0).Seconds())
+	}()
 	wg := &sync.WaitGroup{}
 	errch := make(chan error, 1) // room for just the first error a worker encounters
 	wg.Add(len(tsb))
@@ -79,7 +138,10 @@ func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
 }
 
 func (w *Writer) worker() {
+	w.workerCount.WithLabelValues("idle").Inc()
 	for m := range w.ch {
+		w.workerCount.WithLabelValues("idle").Dec()
+		w.workerCount.WithLabelValues("active").Inc()
 		id := m.ts.ID()
 		for _, s := range m.ts.Samples {
 			err := w.write(id, s.TimestampMS, s.Value)
@@ -92,9 +154,15 @@ func (w *Writer) worker() {
 			}
 		}
 		m.wg.Done()
+		w.workerCount.WithLabelValues("idle").Inc()
+		w.workerCount.WithLabelValues("active").Dec()
 	}
 }
 
 func (w *Writer) write(id string, at int64, value float64) error {
+	t0 := time.Now()
+	defer func() {
+		w.sampleWriteDuration.Observe(time.Since(t0).Seconds())
+	}()
 	return w.s.Query(writeSampleCQL, value, id, at).Exec()
 }

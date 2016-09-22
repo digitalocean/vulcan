@@ -50,6 +50,10 @@ func Ingester() *cobra.Command {
 				NumWorkers: viper.GetInt(flagNumCassandraWorkers),
 				Session:    sess,
 			})
+			err = prometheus.Register(w)
+			if err != nil {
+				return err
+			}
 			s, err := kafka.NewSource(&kafka.SourceConfig{
 				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
 				ClientID: viper.GetString(flagKafkaClientID),
