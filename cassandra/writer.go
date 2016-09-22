@@ -140,10 +140,10 @@ func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
 func (w *Writer) worker() {
 	w.workerCount.WithLabelValues("idle").Inc()
 	for m := range w.ch {
+		w.workerCount.WithLabelValues("idle").Dec()
+		w.workerCount.WithLabelValues("active").Inc()
 		id := m.ts.ID()
 		for _, s := range m.ts.Samples {
-			w.workerCount.WithLabelValues("idle").Dec()
-			w.workerCount.WithLabelValues("active").Inc()
 			err := w.write(id, s.TimestampMS, s.Value)
 			if err != nil {
 				// send error back on payload's errch; don't block the worker
@@ -152,10 +152,10 @@ func (w *Writer) worker() {
 				default:
 				}
 			}
-			w.workerCount.WithLabelValues("idle").Inc()
-			w.workerCount.WithLabelValues("active").Dec()
 		}
 		m.wg.Done()
+		w.workerCount.WithLabelValues("idle").Inc()
+		w.workerCount.WithLabelValues("active").Dec()
 	}
 }
 
