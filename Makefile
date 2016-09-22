@@ -1,14 +1,23 @@
+SHORT_HASH := $(shell git rev-parse --short HEAD)
 VERSION := $(shell git describe --tags --always)
 
-.PHONY: all binary lint release source test vendor vet clean
+.PHONY: all binary docker lint push release source test vendor vet clean
 
 all: test binary
 
 binary: target/vulcan
 
+docker: target/linux/vulcan
+	@echo ">> building docker image"
+	@docker build -t dovulcan/vulcan:$(SHORT_HASH) .
+
 lint:
 	@echo ">> linting source"
 	@golint ./...
+
+push: docker
+	@echo ">> pushing docker image"
+	@docker push dovulcan/vulcan:$(SHORT_HASH)
 
 # release is created from the src tarball to ensure we have all dependencies included
 # in the tarball. We don't want to rely on glide or 3rd party repos to produce
@@ -33,12 +42,21 @@ clean:
 	@echo ">> removing vendor directory"
 	@rm -fr vendor
 
-target/vulcan:
+target/vulcan: vendor
 	@echo ">> compiling target/vulcan"
 	@mkdir -p target
 	@go build \
 		-ldflags "-X main.version=$(VERSION)" \
 		-o target/vulcan main.go
+
+target/linux/vulcan: vendor
+	@echo ">> compiling target/linux/vulcan"
+	@mkdir -p target/linux
+	@GOARCH="amd64" \
+	GOOS="linux" \
+	go build \
+		-ldflags "-X main.version=$(VERSION)" \
+		-o target/linux/vulcan main.go		
 
 target/vulcan-$(VERSION)-src.tar.gz: vendor
 	@echo ">> creating source tarball $@"

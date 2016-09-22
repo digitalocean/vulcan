@@ -1,6 +1,7 @@
 language: go
 go:
   - 1.7
+
 before_install:
   - go get github.com/golang/lint/golint
   - curl -fsSL https://github.com/Masterminds/glide/releases/download/v0.12.2/glide-v0.12.2-linux-amd64.tar.gz -o glide.tar.gz
@@ -12,7 +13,8 @@ script:
   - ./scripts/licensecheck.sh
   - make vet
   - make lint
-  - make
+  - make test
+  - make binary
 
 cache:
   directories:
