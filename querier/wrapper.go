@@ -130,7 +130,7 @@ func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.Label
 		"through":  through,
 		"matchers": matchers,
 	})
-	ll.Info("QueryRange called")
+	ll.Debug("QueryRange called")
 
 	mets, err := w.MetricsForLabelMatchers(from, through, matchers)
 	if err != nil {
@@ -145,7 +145,7 @@ func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.Label
 		itrs = append(itrs, itr)
 	}
 
-	ll.WithField("iterators", itrs).Info("got iterators")
+	ll.WithField("iterator_count", len(itrs)).Debug("got iterators")
 	return itrs, nil
 }
 
@@ -155,7 +155,7 @@ func (w *Wrapper) QueryInstant(ts model.Time, stalenessDelta time.Duration, matc
 	log.WithFields(log.Fields{
 		"ts":       ts,
 		"matchers": matchers,
-	}).Info("QueryInstant called")
+	}).Debug("QueryInstant called")
 	return w.QueryRange(ts.Add(-stalenessDelta), ts.Add(stalenessDelta), matchers...)
 }
 
@@ -172,7 +172,7 @@ func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets 
 	ll := log.WithFields(log.Fields{
 		"matcher_sets": matcherSets,
 	})
-	ll.Info("MetricsForLabelMatchers called")
+	ll.Debug("MetricsForLabelMatchers called")
 
 	result := []metric.Metric{}
 	defer func() {
@@ -304,6 +304,7 @@ func toMetricMetric(bm *bus.Metric) metric.Metric {
 	}
 	return m
 }
+
 func toMetricMetrics(in []*bus.Metric) []metric.Metric {
 	out := make([]metric.Metric, 0, len(in))
 	for _, m := range in {
