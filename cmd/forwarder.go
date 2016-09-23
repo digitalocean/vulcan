@@ -52,6 +52,7 @@ const (
 	flagNumWorkers          = "num-workers"
 	flagTelemetryPath       = "telemetry-path"
 	flagWebListenAddress    = "web-listen-address"
+	flagKafkaTrackWrites    = "kafka-track-writes"
 )
 
 // Forwarder handles parsing the command line options, initializes, and starts the
@@ -70,9 +71,10 @@ func Forwarder() *cobra.Command {
 			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
-				ClientID: viper.GetString(flagKafkaClientID),
-				Topic:    viper.GetString(flagKafkaTopic),
-				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				ClientID:    viper.GetString(flagKafkaClientID),
+				Topic:       viper.GetString(flagKafkaTopic),
+				Addrs:       strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				TrackWrites: viper.GetBool(flagKafkaTrackWrites),
 			})
 			if err != nil {
 				return err
@@ -155,6 +157,7 @@ func Forwarder() *cobra.Command {
 	f.Flags().String(flagKafkaClientID, "vulcan-forwarder", "set the kafka client id")
 	f.Flags().String(flagTelemetryPath, "/metrics", "path under which to expose metrics")
 	f.Flags().String(flagWebListenAddress, ":9031", "address to listen on for telemetry")
+	f.Flags().Bool(flagKafkaTrackWrites, false, "track kafka writes for metric scraping and logging")
 
 	return f
 }

@@ -52,6 +52,8 @@ func NewWriter(config *WriterConfig) (*Writer, error) {
 	cfg := sarama.NewConfig()
 	cfg.ClientID = config.ClientID
 	cfg.Producer.Compression = sarama.CompressionGZIP
+	cfg.Producer.Return.Successes = config.TrackWrites
+
 	producer, err := sarama.NewAsyncProducer(config.Addrs, cfg)
 	if err != nil {
 		return nil, err
@@ -91,9 +93,10 @@ func NewWriter(config *WriterConfig) (*Writer, error) {
 
 // WriterConfig represents the configuration of a Writer object.
 type WriterConfig struct {
-	ClientID string
-	Addrs    []string
-	Topic    string
+	ClientID    string
+	Addrs       []string
+	Topic       string
+	TrackWrites bool
 }
 
 // Describe implements prometheus.Collector which makes the forwarder
