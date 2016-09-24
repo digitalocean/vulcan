@@ -17,21 +17,30 @@ package elasticsearch
 import (
 	"time"
 
-	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
+	"github.com/digitalocean/vulcan/indexer"
+	"github.com/digitalocean/vulcan/model"
 
 	"github.com/olivere/elastic"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	namespace = "vulcan"
+	subsystem = "elasticsearch_sample_indexer"
+)
+
 // SampleIndexer represents an object that takes bus messages and
 // makes indexing decisions on the target ElasticSearch cluster.
 type SampleIndexer struct {
+	indexer.SampleIndexer
 	prometheus.Collector
+
 	Client *elastic.Client
 	Index  string
 
-	indexDurations *prometheus.SummaryVec
+	indexDurations      *prometheus.SummaryVec
+	indexBatchDurations prometheus.Histogram
 }
 
 // SampleIndexerConfig represents the configuration of a SampleIndexer.
@@ -47,12 +56,21 @@ func NewSampleIndexer(config *SampleIndexerConfig) *SampleIndexer {
 		Index:  config.Index,
 		indexDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Namespace: "vulcan",
-				Subsystem: "elasticsearch_sample_indexer",
-				Name:      "duration_nanoseconds",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "index_duration_seconds",
 				Help:      "Durations of different elasticsearch_sample_indexer stages",
 			},
 			[]string{"mode"},
+		),
+		indexBatchDurations: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "indexbatch_duration_seconds",
+				Help:      "Duration of processing of an entire timeseries batch.",
+				Buckets:   prometheus.DefBuckets,
+			},
 		),
 	}
 }
@@ -61,31 +79,33 @@ func NewSampleIndexer(config *SampleIndexerConfig) *SampleIndexer {
 // instance's indexDurations to the parameter ch.
 func (si *SampleIndexer) Describe(ch chan<- *prometheus.Desc) {
 	si.indexDurations.Describe(ch)
+	si.indexBatchDurations.Describe(ch)
 }
 
 // Collect implements prometheus.Collector.  Sends metrics collected bu the
 // instance's indexDurations to the parameter ch.
 func (si *SampleIndexer) Collect(ch chan<- prometheus.Metric) {
 	si.indexDurations.Collect(ch)
+	si.indexBatchDurations.Collect(ch)
 }
 
-func metricToESBody(m bus.Metric) (map[string]string, error) {
-	labels := map[string]string{
-		convert.ESEscape("__name__"): m.Name,
-	}
-	for k, v := range m.Labels {
+func metricToESBody(ts *model.TimeSeries) (map[string]string, error) {
+	labels := map[string]string{}
+
+	for k, v := range ts.Labels {
 		labels[convert.ESEscape(k)] = v
 	}
+
 	return labels, nil
 }
 
 // IndexSample implements the SampleIndexer interface.
-func (si *SampleIndexer) IndexSample(s *bus.Sample) error {
-	t0 := time.Now()
-	key, err := convert.MetricToKey(s.Metric)
-	if err != nil {
-		return err
-	}
+func (si *SampleIndexer) IndexSample(ts *model.TimeSeries) error {
+	var (
+		t0  = time.Now()
+		key = ts.ID()
+	)
+
 	exists, err := si.Client.Exists().
 		Index(si.Index).
 		Type("sample").
@@ -94,19 +114,37 @@ func (si *SampleIndexer) IndexSample(s *bus.Sample) error {
 		return err
 	}
 	if exists {
-		si.indexDurations.WithLabelValues("exists").Observe(float64(time.Since(t0).Nanoseconds()))
+		si.indexDurations.WithLabelValues("exists").Observe(time.Since(t0).Seconds())
 		return nil
 	}
-	body, err := metricToESBody(s.Metric)
+
+	body, err := metricToESBody(ts)
 	if err != nil {
 		return err
 	}
+
 	_, err = si.Client.Index().
 		Index(si.Index).
 		Type("sample").
 		Id(key).
 		BodyJson(body).
 		Do()
-	si.indexDurations.WithLabelValues("insert").Observe(float64(time.Since(t0).Nanoseconds()))
+	si.indexDurations.WithLabelValues("insert").Observe(time.Since(t0).Seconds())
+
 	return err
+}
+
+// IndexSamples indexes a model.TimeSeriesBatch
+func (si *SampleIndexer) IndexSamples(tsb model.TimeSeriesBatch) error {
+	t0 := time.Now()
+
+	defer si.indexBatchDurations.Observe(time.Since(t0).Seconds())
+
+	for _, ts := range tsb {
+		if err := si.IndexSample(ts); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

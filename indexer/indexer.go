@@ -16,57 +16,46 @@ package indexer
 
 import (
 	"sync"
-	"time"
 
 	"github.com/digitalocean/vulcan/bus"
-	"github.com/digitalocean/vulcan/storage"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type workPayload struct {
-	s  *bus.Sample
-	wg *sync.WaitGroup
-}
-
 // Indexer represents an object that consumes metrics from a message bus and
 // writes them to indexing system.
 type Indexer struct {
 	prometheus.Collector
-	Source        bus.AckSource
-	SampleIndexer storage.SampleIndexer
 
-	indexDurations     *prometheus.SummaryVec
-	errorsTotal        *prometheus.CounterVec
-	work               chan workPayload
+	Source        bus.Source
+	SampleIndexer SampleIndexer
+
 	numIndexGoroutines int
+
+	once *sync.Once
+	done chan struct{}
+
+	indexDurations *prometheus.SummaryVec
+	errorsTotal    *prometheus.CounterVec
 }
 
 // Config represents the configuration of an Indexer.  It takes an implmenter
 // Acksource of the target message bus and an implmenter of SampleIndexer of
 // the target indexing system.
 type Config struct {
-	Source             bus.AckSource
-	SampleIndexer      storage.SampleIndexer
+	Source             bus.Source
+	SampleIndexer      SampleIndexer
 	NumIndexGoroutines int
 }
 
 // NewIndexer creates a new instance of an Indexer.
 func NewIndexer(config *Config) *Indexer {
 	i := &Indexer{
-		Source:        config.Source,
-		SampleIndexer: config.SampleIndexer,
+		Source:             config.Source,
+		SampleIndexer:      config.SampleIndexer,
+		numIndexGoroutines: config.NumIndexGoroutines,
 
-		indexDurations: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace: "vulcan",
-				Subsystem: "indexer",
-				Name:      "duration_nanoseconds",
-				Help:      "Durations of different indexer stages",
-			},
-			[]string{"stage"},
-		),
 		errorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "vulcan",
@@ -76,19 +65,17 @@ func NewIndexer(config *Config) *Indexer {
 			},
 			[]string{"stage"},
 		),
-		work:               make(chan workPayload),
-		numIndexGoroutines: config.NumIndexGoroutines,
+
+		once: new(sync.Once),
+		done: make(chan struct{}),
 	}
-	for n := 0; n < i.numIndexGoroutines; n++ {
-		go i.worker()
-	}
+
 	return i
 }
 
 // Describe implements prometheus.Collector.  Sends decriptors of the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
-	i.indexDurations.Describe(ch)
 	i.errorsTotal.Describe(ch)
 	i.SampleIndexer.Describe(ch)
 }
@@ -96,7 +83,6 @@ func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.  Sends metrics collected by the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
-	i.indexDurations.Collect(ch)
 	i.errorsTotal.Collect(ch)
 	i.SampleIndexer.Collect(ch)
 }
@@ -104,58 +90,58 @@ func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
 // Run starts the indexer process of consuming from the bus and indexing to
 // the target indexing system.
 func (i *Indexer) Run() error {
-	log.Info("running...")
-	ch := i.Source.Chan()
-
-	for payload := range ch {
-		log.WithFields(log.Fields{
-			"payload": payload.SampleGroup,
-		}).Debug("distributing sample group to workers")
-
-		i.indexSampleGroup(payload.SampleGroup)
-		payload.Done(nil)
-	}
-
-	return i.Source.Err()
-}
-
-func (i *Indexer) indexSampleGroup(sg bus.SampleGroup) {
 	var (
-		t0 = time.Now()
-		wg = &sync.WaitGroup{}
+		wg       sync.WaitGroup
+		writeErr error
 	)
 
-	wg.Add(len(sg))
+	log.Info("running")
 
-	for _, s := range sg {
-		i.work <- workPayload{
-			s:  s,
-			wg: wg,
-		}
+	for n := 0; n < i.numIndexGoroutines; n++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err := i.work(); err != nil {
+				writeErr = err
+				i.Done()
+			}
+		}()
 	}
-
 	wg.Wait()
-	i.indexDurations.WithLabelValues("index_sample_group").Observe(float64(time.Since(t0).Nanoseconds()))
+
+	if writeErr != nil {
+		return writeErr
+	}
+	return i.Source.Error()
 }
 
-func (i *Indexer) worker() {
-	for w := range i.work {
-		var (
-			t0 = time.Now()
-			ll = log.WithFields(log.Fields{"sample": w.s})
-		)
+func (i *Indexer) work() error {
+	for {
+		select {
+		case m, ok := <-i.Source.Messages():
+			if !ok {
+				return nil
+			}
 
-		ll.Debug("writing sample")
+			if err := i.SampleIndexer.IndexSamples(m.TimeSeriesBatch); err != nil {
+				i.errorsTotal.WithLabelValues("index_sample").Add(1)
 
-		err := i.SampleIndexer.IndexSample(w.s)
-		w.wg.Done()
-		if err != nil {
-			ll.WithError(err).Error("could not write sample to index storage")
+				return err
+			}
 
-			i.errorsTotal.WithLabelValues("index_sample").Add(1)
-			continue
+			m.Ack()
+
+		case <-i.done:
+			return nil
 		}
-
-		i.indexDurations.WithLabelValues("index_sample").Observe(float64(time.Since(t0).Nanoseconds()))
 	}
+}
+
+// Done gracefully stops the indexer.
+func (i *Indexer) Done() {
+	i.once.Do(func() {
+		close(i.done)
+	})
 }

@@ -12,19 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package model
 
-import (
-	"github.com/digitalocean/vulcan/bus"
+import "fmt"
 
-	"github.com/prometheus/client_golang/prometheus"
-)
+// Errors represents a slice of errors.
+// It implements the error interface and is meant to collect errors for
+// reporting reason.  It should not be use in a scenario where a single
+// error needs to trigger a failure.
+type Errors []error
 
-// SampleIndexer is an interface is provided to the indexer in order to index
-// metrics
-type SampleIndexer interface {
-	prometheus.Collector
-	// IndexSample takes in a sample from the message bus and makes indexing
-	// decisions on the target indexing system.
-	IndexSample(*bus.Sample) error
+func (e Errors) Error() string {
+	if len(e) == 1 {
+		return e.Error()
+	}
+
+	msg := "multiple errors occured:"
+	for _, err := range e {
+		msg += fmt.Sprintf("\n%s", err.Error())
+	}
+
+	return msg
+}
+
+// Occurred checks if at least one 1 has occurred.
+func (e Errors) Occurred() bool {
+	return len(e) > 0
 }

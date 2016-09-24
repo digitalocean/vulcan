@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package indexer
 
 import (
-	"github.com/digitalocean/vulcan/bus"
-
+	"github.com/digitalocean/vulcan/model"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -26,5 +25,6 @@ type SampleIndexer interface {
 	prometheus.Collector
 	// IndexSample takes in a sample from the message bus and makes indexing
 	// decisions on the target indexing system.
-	IndexSample(*bus.Sample) error
+	IndexSamples(model.TimeSeriesBatch) error
+	IndexSample(*model.TimeSeries) error
 }
