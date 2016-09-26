@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -56,8 +57,22 @@ func Indexer() *cobra.Command {
 				return err
 			}
 
+			// custom client used so we can more effeciently reuse connections.
+			customClient := &http.Client{
+				Transport: &http.Transport{
+					Dial: func(network, addr string) (net.Conn, error) {
+						return net.Dial(network, addr)
+					},
+					MaxIdleConnsPerHost: viper.GetInt("max-idle-conn"),
+				},
+			}
+
 			// allow sniff to be set because in some networking environments sniffing doesn't work. Should be allowed in prod
-			client, err := elastic.NewClient(elastic.SetURL(viper.GetString("es")), elastic.SetSniff(viper.GetBool("es-sniff")))
+			client, err := elastic.NewClient(
+				elastic.SetURL(viper.GetString("es")),
+				elastic.SetSniff(viper.GetBool("es-sniff")),
+				elastic.SetHttpClient(customClient),
+			)
 			if err != nil {
 				return err
 			}
@@ -74,8 +89,9 @@ func Indexer() *cobra.Command {
 
 			// create indexer and run
 			i := indexer.NewIndexer(&indexer.Config{
-				SampleIndexer: sampleIndexer,
-				Source:        source,
+				SampleIndexer:      sampleIndexer,
+				Source:             source,
+				NumIndexGoroutines: viper.GetInt("indexer-goroutines"),
 			})
 			prometheus.MustRegister(i)
 			go func() {
@@ -94,6 +110,8 @@ func Indexer() *cobra.Command {
 	Indexer.Flags().Bool("es-sniff", true, "whether or not to sniff additional hosts in the cluster")
 	Indexer.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
 	Indexer.Flags().Duration("es-writecache-duration", time.Minute*10, "the duration to cache having written a value to es and to skip further writes of the same metric")
+	Indexer.Flags().Uint("indexer-goroutines", 400, "worker goroutines for writing indexes")
+	Indexer.Flags().Uint("max-idle-conn", 400, "max idle connections for fetching from data storage")
 
 	return Indexer
 }
