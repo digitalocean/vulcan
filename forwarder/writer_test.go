@@ -17,7 +17,6 @@ package forwarder
 import (
 	"reflect"
 	"testing"
-	"time"
 
 	"golang.org/x/net/context"
 
@@ -871,8 +870,9 @@ func TestForwarderWrite(t *testing.T) {
 		// Not using any of the returned values currently
 		_, _ = f.Write(context.Background(), test.arg)
 
-		// give one second for mock go routines to complete
-		time.Sleep(1500 * time.Millisecond)
+		// wait for write calls to complete
+		f.wg.Done()
+		f.wg.Wait()
 
 		if mw.WriteCount != test.expectedWriteCount {
 			t.Errorf(

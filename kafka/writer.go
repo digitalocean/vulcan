@@ -29,21 +29,17 @@ const (
 	subsystem = "kafka"
 )
 
-var _ prometheus.Collector = &Writer{}
-
 // Writer represents an object that encapsulates the behavior of a Kafka
 // producter.
 type Writer struct {
 	producer sarama.AsyncProducer
 	topic    string
 
-	ch   chan *sarama.ProducerMessage
 	done chan struct{}
 	once *sync.Once
+	wg   *sync.WaitGroup
 
-	successes, errors, enqueued int
-
-	kafkaWriteStatus *prometheus.GaugeVec
+	kafkaWriteStatus *prometheus.CounterVec
 	queuedForWrites  prometheus.Gauge
 }
 
@@ -63,15 +59,15 @@ func NewWriter(config *WriterConfig) (*Writer, error) {
 		producer: producer,
 		topic:    config.Topic,
 
-		ch:   make(chan *sarama.ProducerMessage, 1),
 		done: make(chan struct{}),
 		once: new(sync.Once),
+		wg:   new(sync.WaitGroup),
 
-		kafkaWriteStatus: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
+		kafkaWriteStatus: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "writes",
+				Name:      "message_writes_total",
 				Help:      "Count of kafka writes.",
 			},
 			[]string{"status"},
@@ -126,81 +122,60 @@ func (w *Writer) Write(key string, req *remote.WriteRequest) error {
 		Value: sarama.ByteEncoder(data),
 	}
 
-	w.ch <- m
+	go func() {
+		w.producer.Input() <- m
+
+		w.queuedForWrites.Inc()
+	}()
 
 	return nil
 }
 
 func (w *Writer) run() {
-	var (
-		wg sync.WaitGroup
-		ll = log.WithFields(log.Fields{
-			"source": "kafka.writer.run",
-			"topic":  w.topic,
-		})
-	)
+	ll := log.WithFields(log.Fields{
+		"source": "kafka.writer.run",
+		"topic":  w.topic,
+	})
 
 	// listen for successes
-	wg.Add(1)
+	w.wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer w.wg.Done()
 
 		for _ = range w.producer.Successes() {
-			w.successes++
-			w.enqueued--
+			w.queuedForWrites.Dec()
 			w.kafkaWriteStatus.WithLabelValues("success").Inc()
 		}
 	}()
 
 	// listen for errors
-	wg.Add(1)
+	w.wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer w.wg.Done()
 
 		for err := range w.producer.Errors() {
-			w.errors++
-			w.enqueued--
+			w.queuedForWrites.Dec()
 			w.kafkaWriteStatus.WithLabelValues("error").Inc()
 
-			ll.WithError(err).WithFields(log.Fields{
-				"total_successes": w.successes,
-				"total_errors":    w.errors,
-				"total_queued":    w.enqueued,
-			}).Error("write error to kafka received")
+			ll.WithError(err).Error("write error to kafka received")
 		}
 	}()
 
-	// listen for producer messages to write
-ProducerLoop:
-	for m := range w.ch {
-		select {
-		case w.producer.Input() <- m:
-			ll.WithFields(log.Fields{
-				"message_key":    m.Key,
-				"message_length": m.Value.Length(),
-			}).Debug("msg sent to queue")
+	// Add one more wait group to ensure clean up code gets executed,
+	// then block until explicit service stop
+	w.wg.Add(1)
+	<-w.done
 
-			w.enqueued++
-			w.queuedForWrites.Set(float64(w.enqueued))
+	w.producer.AsyncClose()
+	ll.Warn("kafka writer stopped")
 
-		case <-w.done:
-			w.producer.AsyncClose()
-			ll.WithFields(log.Fields{
-				"total_successes": w.successes,
-				"total_errors":    w.errors,
-				"total_queued":    w.enqueued,
-			}).Debug("kafka writer stopped")
-
-			break ProducerLoop
-		}
-	}
-
-	wg.Wait()
+	w.wg.Done()
 }
 
 // Stop gracefully stops the Kafka Writer
 func (w *Writer) Stop() {
 	w.once.Do(func() {
 		close(w.done)
+		w.wg.Wait()
 	})
 }

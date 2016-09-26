@@ -20,7 +20,6 @@ import (
 
 	"github.com/digitalocean/vulcan/model"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/gocql/gocql"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -140,7 +139,6 @@ func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
 }
 
 func (w *Writer) worker() {
-	ll := log.WithFields(log.Fields{"source": "cassandra.writer.worker"})
 
 	w.workerCount.WithLabelValues("idle").Inc()
 
@@ -152,14 +150,12 @@ func (w *Writer) worker() {
 			err := w.write(id, s.TimestampMS, s.Value)
 			if err != nil {
 				// send error back on payload's errch; don't block the worker
-				go ll.WithError(err).Error("write failed")
 
 				select {
 				case m.errch <- err:
 				default:
 				}
 			}
-			ll.WithFields(log.Fields{"sample": s.Value, "id": id}).Debug("sample written to cassandra")
 		}
 		m.wg.Done()
 		w.workerCount.WithLabelValues("idle").Inc()

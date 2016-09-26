@@ -22,7 +22,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"google.golang.org/grpc"
 
@@ -122,11 +121,12 @@ func Forwarder() *cobra.Command {
 
 			// listen for signals so can gracefully stop kakfa producer
 			go func() {
-				for _ = range signals {
-					w.Stop()
-					time.Sleep(2 * time.Second)
-					os.Exit(0)
-				}
+				<-signals
+				// tell forwarder to stop handling in incoming requests
+				fwd.Stop()
+				// tell kafka writer to stop sending out producer messages
+				w.Stop()
+				os.Exit(0)
 			}()
 
 			return <-errCh

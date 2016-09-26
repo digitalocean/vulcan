@@ -35,16 +35,18 @@ const (
 	subsystem = "forwarder"
 )
 
-var (
-	_ remote.WriteServer   = &Forwarder{}
-	_ prometheus.Collector = &Forwarder{}
-)
+// ErrServiceUnavailable returned when the Forwarder stops handling incoming requests
+var ErrServiceUnavailable = errors.New("Forwarder Service Unavailable")
 
 // Forwarder represents an object that accepts metrics from Prometheus.
 // Metrics are grouped by target instance and written to the configured
 // Vulcan message bus.
 type Forwarder struct {
 	writer bus.Writer
+
+	wg   *sync.WaitGroup
+	once *sync.Once
+	done chan struct{}
 
 	writeBatchDuration prometheus.Histogram
 	reqTimeseriesCount prometheus.Histogram
@@ -57,8 +59,13 @@ type Config struct {
 
 // NewForwarder creates a new instance of Forwarder.
 func NewForwarder(config *Config) *Forwarder {
-	return &Forwarder{
+	f := &Forwarder{
 		writer: config.Writer,
+
+		wg:   new(sync.WaitGroup),
+		once: new(sync.Once),
+		done: make(chan struct{}),
+
 		writeBatchDuration: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
 				Namespace: namespace,
@@ -72,12 +79,16 @@ func NewForwarder(config *Config) *Forwarder {
 			prometheus.HistogramOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "request_timeseries_count",
+				Name:      "request_timeseries_length",
 				Help:      "Number of timeseries objects in the write request.",
 				Buckets:   []float64{0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
 			},
 		),
 	}
+
+	f.wg.Add(1)
+
+	return f
 }
 
 // Describe implements prometheus.Collector which makes the forwarder
@@ -99,8 +110,14 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 	var (
 		toWrite = map[string]*remote.WriteRequest{}
 		ll      = log.WithFields(log.Fields{"source": "forwarder.Write"})
-		wg      sync.WaitGroup
 	)
+
+	select {
+	case <-f.done:
+		return nil, ErrServiceUnavailable
+
+	default:
+	}
 
 	// Batch time series data by instance, fallback on address.
 	for _, ts := range req.Timeseries {
@@ -122,19 +139,13 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 		}
 	}
 
-	wg.Add(len(toWrite))
 	// Write each batch to the Vulcan bus.
 	for key, wr := range toWrite {
-
+		f.wg.Add(1)
 		go func(key string, wr *remote.WriteRequest) {
-			defer wg.Done()
+			defer f.wg.Done()
 
 			f.reqTimeseriesCount.Observe(float64(len(wr.Timeseries)))
-
-			ll = ll.WithFields(log.Fields{"key": key})
-			ll.WithFields(log.Fields{
-				"timeseries_count": len(wr.Timeseries),
-			}).Debug("preparing message for write")
 
 			t0 := time.Now()
 			if err := f.writer.Write(key, wr); err != nil {
@@ -184,4 +195,14 @@ func getKey(ts *remote.TimeSeries) (string, error) {
 	}
 
 	return fmt.Sprintf("%s-%s", jobName, inst), nil
+}
+
+// Stop stops the frowarder service. All incoming requests are returned an
+// ErrServiceUnavailable.
+func (f *Forwarder) Stop() {
+	f.once.Do(func() {
+		close(f.done)
+		f.wg.Done()
+		f.wg.Wait()
+	})
 }

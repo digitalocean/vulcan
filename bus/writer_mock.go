@@ -16,6 +16,7 @@ package bus
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/prometheus/prometheus/storage/remote"
 )
@@ -34,21 +35,25 @@ type MockWriter struct {
 	WErr       error
 	WriteCount int
 	Args       []*MockWriteArgs
+	mutex      *sync.Mutex
 }
 
 // NewMockWriter returns an instance of MockWriter.
 func NewMockWriter() *MockWriter {
 	return &MockWriter{
-		Args: make([]*MockWriteArgs, 0),
+		Args:  make([]*MockWriteArgs, 0),
+		mutex: new(sync.Mutex),
 	}
 }
 
 // Write implements bus.Writer.
 func (w *MockWriter) Write(k string, wr *remote.WriteRequest) error {
+	w.mutex.Lock()
 	w.Args = append(w.Args, &MockWriteArgs{Key: k, WriteRequest: wr})
+	w.mutex.Unlock()
 
 	if w.WErr == nil {
-		w.WriteCount++
+		*(&w.WriteCount)++
 		return nil
 	}
 
