@@ -17,8 +17,11 @@ package cmd
 import (
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 
 	"google.golang.org/grpc"
 
@@ -33,24 +36,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const (
-	flagAddress             = "address"
-	flagCassandraAddrs      = "cassandra-addrs"
-	flagCassandraKeyspace   = "cassandra-keyspace"
-	flagCassandraTimeout    = "cassandra-timeout"
-	flagCassandraNumConns   = "cassandra-num-conns"
-	flagKafkaAddrs          = "kafka-addrs"
-	flagKafkaClientID       = "kafka-client-id"
-	flagKafkaGroupID        = "kafka-group-id"
-	flagKafkaTopic          = "kafka-topic"
-	flagNumCassandraWorkers = "num-cassandra-workers"
-	flagNumKafkaWorkers     = "num-kafka-workers"
-	flagNumWorkers          = "num-workers"
-	flagTelemetryPath       = "telemetry-path"
-	flagWebListenAddress    = "web-listen-address"
-	flagUncompressedTTL     = "uncompressed-ttl"
-)
-
 // Forwarder handles parsing the command line options, initializes, and starts the
 // forwarder service accordingling.  It is the entry point for the forwarder
 // service.
@@ -59,13 +44,24 @@ func Forwarder() *cobra.Command {
 		Use:   "forwarder",
 		Short: "forwards metric received from prometheus to message bus",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reg := prometheus.NewRegistry()
+			var (
+				reg     = prometheus.NewRegistry()
+				signals = make(chan os.Signal, 1)
+			)
+
+			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
-				ClientID: viper.GetString(flagKafkaClientID),
-				Topic:    viper.GetString(flagKafkaTopic),
-				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				ClientID:    viper.GetString(flagKafkaClientID),
+				Topic:       viper.GetString(flagKafkaTopic),
+				Addrs:       strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				TrackWrites: viper.GetBool(flagKafkaTrackWrites),
 			})
+			if err != nil {
+				return err
+			}
+
+			err = reg.Register(w)
 			if err != nil {
 				return err
 			}
@@ -79,6 +75,7 @@ func Forwarder() *cobra.Command {
 			fwd := forwarder.NewForwarder(&forwarder.Config{
 				Writer: w,
 			})
+
 			err = reg.Register(fwd)
 			if err != nil {
 				return err
@@ -121,6 +118,17 @@ func Forwarder() *cobra.Command {
 					})
 				}
 			}()
+
+			// listen for signals so can gracefully stop kakfa producer
+			go func() {
+				<-signals
+				// tell forwarder to stop handling in incoming requests
+				fwd.Stop()
+				// tell kafka writer to stop sending out producer messages
+				w.Stop()
+				os.Exit(0)
+			}()
+
 			return <-errCh
 		},
 	}
@@ -131,6 +139,7 @@ func Forwarder() *cobra.Command {
 	f.Flags().String(flagKafkaClientID, "vulcan-forwarder", "set the kafka client id")
 	f.Flags().String(flagTelemetryPath, "/metrics", "path under which to expose metrics")
 	f.Flags().String(flagWebListenAddress, ":9031", "address to listen on for telemetry")
+	f.Flags().Bool(flagKafkaTrackWrites, false, "track kafka writes for metric scraping and logging")
 
 	return f
 }

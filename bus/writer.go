@@ -18,5 +18,8 @@ import "github.com/prometheus/prometheus/storage/remote"
 
 // Writer is an interface that wraps the Write method to a message bus.
 type Writer interface {
+	// Write writes the timeseries data to the configured.
+	// The key can be used as a partition key to where the the paylad req
+	// should be written.
 	Write(key string, req *remote.WriteRequest) error
 }
