@@ -870,6 +870,10 @@ func TestForwarderWrite(t *testing.T) {
 		// Not using any of the returned values currently
 		_, _ = f.Write(context.Background(), test.arg)
 
+		// wait for write calls to complete
+		f.wg.Done()
+		f.wg.Wait()
+
 		if mw.WriteCount != test.expectedWriteCount {
 			t.Errorf(
 				"Forwarder.Write(context, %v) => %d write counts; expected %d",

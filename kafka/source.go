@@ -15,9 +15,11 @@
 package kafka
 
 import (
-	cluster "github.com/bsm/sarama-cluster"
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/model"
+
+	log "github.com/Sirupsen/logrus"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/prometheus/storage/remote"
 )
@@ -72,12 +74,19 @@ func (s *Source) Messages() <-chan *bus.SourcePayload {
 
 func (s *Source) run() {
 	defer close(s.m)
+
 	for m := range s.c.Messages() {
+		log.WithFields(log.Fields{
+			"message_length": len(m.Value),
+			"source":         "kafka.source.run",
+		}).Debug("consumer message received")
+
 		tsb, err := parseTimeSeriesBatch(m.Value)
 		if err != nil {
 			s.e = err
 			return
 		}
+
 		p := &bus.SourcePayload{
 			TimeSeriesBatch: tsb,
 			Ack: func() {

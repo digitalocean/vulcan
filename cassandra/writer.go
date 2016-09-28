@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/model"
+
 	"github.com/gocql/gocql"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -138,7 +139,9 @@ func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
 }
 
 func (w *Writer) worker() {
+
 	w.workerCount.WithLabelValues("idle").Inc()
+
 	for m := range w.ch {
 		w.workerCount.WithLabelValues("idle").Dec()
 		w.workerCount.WithLabelValues("active").Inc()
@@ -147,6 +150,7 @@ func (w *Writer) worker() {
 			err := w.write(id, s.TimestampMS, s.Value)
 			if err != nil {
 				// send error back on payload's errch; don't block the worker
+
 				select {
 				case m.errch <- err:
 				default:
