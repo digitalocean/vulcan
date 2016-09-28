@@ -48,6 +48,7 @@ const (
 	flagNumWorkers          = "num-workers"
 	flagTelemetryPath       = "telemetry-path"
 	flagWebListenAddress    = "web-listen-address"
+	flagUncompressedTTL     = "uncompressed-ttl"
 )
 
 // Forwarder handles parsing the command line options, initializes, and starts the

@@ -49,6 +49,7 @@ func Ingester() *cobra.Command {
 			w := cassandra.NewWriter(&cassandra.WriterConfig{
 				NumWorkers: viper.GetInt(flagNumCassandraWorkers),
 				Session:    sess,
+				TTL:        viper.GetDuration(flagUncompressedTTL),
 			})
 			err = prometheus.Register(w)
 			if err != nil {
@@ -86,6 +87,7 @@ func Ingester() *cobra.Command {
 	ingcmd.Flags().String(flagKafkaClientID, "vulcan-ingest", "set the kafka client id")
 	ingcmd.Flags().String(flagKafkaGroupID, "vulcan-ingester", "workers with the same groupID will join the same Kafka ConsumerGroup")
 	ingcmd.Flags().String(flagKafkaTopic, "vulcan", "set the kafka topic to consume")
+	ingcmd.Flags().Duration(flagUncompressedTTL, time.Hour*24*7, "uncompressed sample ttl")
 
 	return ingcmd
 }
