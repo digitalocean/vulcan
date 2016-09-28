@@ -79,7 +79,7 @@ func NewWriter(config *WriterConfig) *Writer {
 	w := &Writer{
 		s:          config.Session,
 		ch:         make(chan *writerPayload),
-		ttlSeconds: config.TTL.Nanoseconds() / int64(time.Second),
+		ttlSeconds: int64(config.TTL.Seconds()),
 
 		batchWriteDuration: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
