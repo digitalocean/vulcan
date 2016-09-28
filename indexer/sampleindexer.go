@@ -14,15 +14,11 @@
 
 package indexer
 
-import (
-	"github.com/digitalocean/vulcan/model"
-	"github.com/prometheus/client_golang/prometheus"
-)
+import "github.com/digitalocean/vulcan/model"
 
 // SampleIndexer is an interface is provided to the indexer in order to index
 // metrics
 type SampleIndexer interface {
-	prometheus.Collector
 	// IndexSample takes in a sample from the message bus and makes indexing
 	// decisions on the target indexing system.
 	IndexSamples(model.TimeSeriesBatch) error

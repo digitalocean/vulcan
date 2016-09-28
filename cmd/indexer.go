@@ -78,8 +78,9 @@ func Indexer() *cobra.Command {
 
 			// set up caching es sample indexer
 			esIndexer := elasticsearch.NewSampleIndexer(&elasticsearch.SampleIndexerConfig{
-				Client: client,
-				Index:  viper.GetString("es-index"),
+				Client:     client,
+				Index:      viper.GetString("es-index"),
+				NumWorkers: viper.GetInt("num-es-workers"),
 			})
 			sampleIndexer := storage.NewCachingIndexer(&storage.CachingIndexerConfig{
 				Indexer:     esIndexer,
@@ -91,8 +92,13 @@ func Indexer() *cobra.Command {
 				SampleIndexer:      sampleIndexer,
 				Source:             s,
 				NumIndexGoroutines: viper.GetInt("indexer-goroutines"),
+				CleanUp:            esIndexer.Stop,
 			})
+
 			prometheus.MustRegister(i)
+			prometheus.MustRegister(esIndexer)
+			prometheus.MustRegister(sampleIndexer)
+
 			go func() {
 				http.Handle("/metrics", prometheus.Handler())
 				http.ListenAndServe(":8080", nil)
@@ -102,16 +108,17 @@ func Indexer() *cobra.Command {
 		},
 	}
 
-	Indexer.Flags().String("kafka-addrs", "", "one.example.com:9092,two.example.com:9092")
-	Indexer.Flags().String("kafka-client-id", "vulcan-indexer", "set the kafka client id")
-	Indexer.Flags().String("kafka-topic", "vulcan", "topic to read in kafka")
+	Indexer.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	Indexer.Flags().String(flagKafkaClientID, "vulcan-indexer", "set the kafka client id")
+	Indexer.Flags().String(flagKafkaTopic, "vulcan", "topic to read in kafka")
 	Indexer.Flags().String(flagKafkaGroupID, "vulcan-indexer", "workers with the same groupID will join the same Kafka ConsumerGroup")
 	Indexer.Flags().String("es", "http://elasticsearch:9200", "elasticsearch connection url")
 	Indexer.Flags().Bool("es-sniff", true, "whether or not to sniff additional hosts in the cluster")
 	Indexer.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
 	Indexer.Flags().Duration("es-writecache-duration", time.Minute*10, "the duration to cache having written a value to es and to skip further writes of the same metric")
-	Indexer.Flags().Uint("indexer-goroutines", 400, "worker goroutines for writing indexes")
-	Indexer.Flags().Uint("max-idle-conn", 400, "max idle connections for fetching from data storage")
+	Indexer.Flags().Uint("indexer-goroutines", 30, "worker goroutines for writing indexes")
+	Indexer.Flags().Uint("max-idle-conn", 2, "max idle connections for fetching from data storage")
+	Indexer.Flags().Uint("num-es-workers", 30, "number of workers to handle ES requests")
 
 	return Indexer
 }

@@ -23,6 +23,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	namespace = "vulcan"
+	subsystem = "indexer"
+)
+
 // Indexer represents an object that consumes metrics from a message bus and
 // writes them to indexing system.
 type Indexer struct {
@@ -36,6 +41,8 @@ type Indexer struct {
 	once *sync.Once
 	done chan struct{}
 
+	cleanUp func()
+
 	indexDurations *prometheus.SummaryVec
 	errorsTotal    *prometheus.CounterVec
 }
@@ -47,6 +54,10 @@ type Config struct {
 	Source             bus.Source
 	SampleIndexer      SampleIndexer
 	NumIndexGoroutines int
+	// CleanUp represents a clean up function that gets called when the Stop function
+	// gets called and it is not nil.  Currently Stop only calls close on the Indexer's
+	// done channel which stops all worker goroutines.
+	CleanUp func()
 }
 
 // NewIndexer creates a new instance of an Indexer.
@@ -58,16 +69,17 @@ func NewIndexer(config *Config) *Indexer {
 
 		errorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "vulcan",
-				Subsystem: "indexer",
+				Namespace: namespace,
+				Subsystem: subsystem,
 				Name:      "errors_total",
 				Help:      "Total number of errors of indexer stages",
 			},
 			[]string{"stage"},
 		),
 
-		once: new(sync.Once),
-		done: make(chan struct{}),
+		once:    new(sync.Once),
+		done:    make(chan struct{}),
+		cleanUp: config.CleanUp,
 	}
 
 	return i
@@ -77,14 +89,12 @@ func NewIndexer(config *Config) *Indexer {
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
 	i.errorsTotal.Describe(ch)
-	i.SampleIndexer.Describe(ch)
 }
 
 // Collect implements prometheus.Collector.  Sends metrics collected by the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
 	i.errorsTotal.Collect(ch)
-	i.SampleIndexer.Collect(ch)
 }
 
 // Run starts the indexer process of consuming from the bus and indexing to
@@ -105,7 +115,6 @@ func (i *Indexer) Run() error {
 
 			if err := i.work(); err != nil {
 				writeErr = err
-				i.Done()
 			}
 		}()
 	}
@@ -139,9 +148,13 @@ func (i *Indexer) work() error {
 	}
 }
 
-// Done gracefully stops the indexer.
-func (i *Indexer) Done() {
+// Stop gracefully stops the indexer.  Takes a function f that can do any additional
+// clean up work.
+func (i *Indexer) Stop() {
 	i.once.Do(func() {
+		if i.cleanUp != nil {
+			i.cleanUp()
+		}
 		close(i.done)
 	})
 }

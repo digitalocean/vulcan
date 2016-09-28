@@ -82,7 +82,6 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 // instance's indexDurations and Indexer to the parameter ch.
 func (ci *CachingIndexer) Describe(ch chan<- *prometheus.Desc) {
 	ci.indexDurations.Describe(ch)
-	ci.Indexer.Describe(ch)
 	ci.indexBatchDurations.Describe(ch)
 }
 
@@ -90,7 +89,6 @@ func (ci *CachingIndexer) Describe(ch chan<- *prometheus.Desc) {
 // and Indexer to the parameter ch.
 func (ci *CachingIndexer) Collect(ch chan<- prometheus.Metric) {
 	ci.indexDurations.Collect(ch)
-	ci.Indexer.Collect(ch)
 	ci.indexBatchDurations.Collect(ch)
 }
 
@@ -98,13 +96,13 @@ func (ci *CachingIndexer) Collect(ch chan<- prometheus.Metric) {
 // indexed.
 func (ci *CachingIndexer) IndexSamples(tsb model.TimeSeriesBatch) error {
 	t0 := time.Now()
+	defer ci.indexBatchDurations.Observe(time.Since(t0).Seconds())
 
 	for _, ts := range tsb {
 		if err := ci.IndexSample(ts); err != nil {
 			return err
 		}
 	}
-	ci.indexBatchDurations.Observe(time.Since(t0).Seconds())
 
 	return nil
 }
