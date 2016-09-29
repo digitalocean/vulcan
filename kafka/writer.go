@@ -49,6 +49,7 @@ func NewWriter(config *WriterConfig) (*Writer, error) {
 	cfg.ClientID = config.ClientID
 	cfg.Producer.Compression = sarama.CompressionGZIP
 	cfg.Producer.Return.Successes = config.TrackWrites
+	cfg.Producer.Flush.Bytes = config.BatchSize
 
 	producer, err := sarama.NewAsyncProducer(config.Addrs, cfg)
 	if err != nil {
@@ -93,6 +94,7 @@ type WriterConfig struct {
 	Addrs       []string
 	Topic       string
 	TrackWrites bool
+	BatchSize   int
 }
 
 // Describe implements prometheus.Collector which makes the forwarder
