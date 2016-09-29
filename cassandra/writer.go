@@ -27,6 +27,8 @@ import (
 const (
 	namespace = "vulcan"
 	subsystem = "cassandra"
+
+	writeTTLSampleCQL = `UPDATE uncompressed USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
 )
 
 // Writer implements ingester.Writer to persist TimeSeriesBatch samples
@@ -34,8 +36,9 @@ const (
 type Writer struct {
 	prometheus.Collector
 
-	s  *gocql.Session
-	ch chan *writerPayload
+	s          *gocql.Session
+	ch         chan *writerPayload
+	ttlSeconds int64
 
 	batchWriteDuration  prometheus.Histogram
 	sampleWriteDuration prometheus.Histogram
@@ -68,14 +71,16 @@ type writerPayload struct {
 type WriterConfig struct {
 	NumWorkers int
 	Session    *gocql.Session
+	TTL        time.Duration
 }
 
 // NewWriter creates a Writer and starts the configured number of
 // goroutines to write to Cassandra concurrently.
 func NewWriter(config *WriterConfig) *Writer {
 	w := &Writer{
-		s:  config.Session,
-		ch: make(chan *writerPayload),
+		s:          config.Session,
+		ch:         make(chan *writerPayload),
+		ttlSeconds: int64(config.TTL.Seconds()),
 
 		batchWriteDuration: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
@@ -168,5 +173,5 @@ func (w *Writer) write(id string, at int64, value float64) error {
 	defer func() {
 		w.sampleWriteDuration.Observe(time.Since(t0).Seconds())
 	}()
-	return w.s.Query(writeSampleCQL, value, id, at).Exec()
+	return w.s.Query(writeTTLSampleCQL, w.ttlSeconds, value, id, at).Exec()
 }
