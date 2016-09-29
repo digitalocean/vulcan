@@ -25,6 +25,7 @@ const (
 	flagKafkaClientID       = "kafka-client-id"
 	flagKafkaGroupID        = "kafka-group-id"
 	flagKafkaTopic          = "kafka-topic"
+	flagKafkaBatchSize      = "kafka-batch-size"
 	flagNumCassandraWorkers = "num-cassandra-workers"
 	flagNumKafkaWorkers     = "num-kafka-workers"
 	flagNumWorkers          = "num-workers"

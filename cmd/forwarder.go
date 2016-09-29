@@ -56,6 +56,7 @@ func Forwarder() *cobra.Command {
 				Topic:       viper.GetString(flagKafkaTopic),
 				Addrs:       strings.Split(viper.GetString(flagKafkaAddrs), ","),
 				TrackWrites: viper.GetBool(flagKafkaTrackWrites),
+				BatchSize:   viper.GetInt(flagKafkaBatchSize),
 			})
 			if err != nil {
 				return err
@@ -140,6 +141,7 @@ func Forwarder() *cobra.Command {
 	f.Flags().String(flagTelemetryPath, "/metrics", "path under which to expose metrics")
 	f.Flags().String(flagWebListenAddress, ":9031", "address to listen on for telemetry")
 	f.Flags().Bool(flagKafkaTrackWrites, false, "track kafka writes for metric scraping and logging")
+	f.Flags().Int(flagKafkaBatchSize, 65536, "batch size of each send of kafka producer messages")
 
 	return f
 }
