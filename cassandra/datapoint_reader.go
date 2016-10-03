@@ -15,8 +15,6 @@
 package cassandra
 
 import (
-	"time"
-
 	"github.com/gocql/gocql"
 
 	"github.com/digitalocean/vulcan/bus"
@@ -32,27 +30,15 @@ type DatapointReader struct {
 
 // DatapointReaderConfig represents the configuration of a DatapointReader.
 type DatapointReaderConfig struct {
-	CassandraAddrs []string
-	Keyspace       string
-	Timeout        time.Duration
+	Session *gocql.Session
 }
 
 // NewDatapointReader creates a new instance of DatapointReader.
-func NewDatapointReader(config *DatapointReaderConfig) (*DatapointReader, error) {
-	cluster := gocql.NewCluster(config.CassandraAddrs...)
-	cluster.Keyspace = config.Keyspace
-	cluster.Timeout = config.Timeout
-	cluster.NumConns = numCassandraConns
-	cluster.Consistency = cassandraConsistency
-	cluster.ProtoVersion = cassandraProtoVersion
-	sess, err := cluster.CreateSession()
-	if err != nil {
-		return nil, err
-	}
+func NewDatapointReader(config *DatapointReaderConfig) *DatapointReader {
 	sw := &DatapointReader{
-		sess: sess,
+		sess: config.Session,
 	}
-	return sw, nil
+	return sw
 }
 
 // ReadDatapoints implements storage.DatapointReader interface.

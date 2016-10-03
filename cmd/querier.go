@@ -16,11 +16,11 @@ package cmd
 
 import (
 	"strings"
-	"time"
 
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/querier"
 	"github.com/digitalocean/vulcan/storage/elasticsearch"
+	"github.com/gocql/gocql"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -36,22 +36,27 @@ func Querier() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// create elasticsearch metric resolver
 			r, err := elasticsearch.NewResolver(&elasticsearch.ResolverConfig{
-				URL:   viper.GetString("es"),
-				Sniff: viper.GetBool("es-sniff"),
-				Index: viper.GetString("es-index"),
+				URL:   viper.GetString(flagESAddrs),
+				Sniff: viper.GetBool(flagESSniff),
+				Index: viper.GetString(flagESIndex),
 			})
+			if err != nil {
+				return err
+			}
+			cluster := gocql.NewCluster(strings.Split(viper.GetString(flagCassandraAddrs), ",")...)
+			cluster.Keyspace = viper.GetString(flagCassandraKeyspace)
+			cluster.Timeout = viper.GetDuration(flagCassandraTimeout)
+			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
+			cluster.Consistency = gocql.LocalOne
+			cluster.ProtoVersion = 4
+			sess, err := cluster.CreateSession()
 			if err != nil {
 				return err
 			}
 			// create cassandra datapoint reader
-			dpr, err := cassandra.NewDatapointReader(&cassandra.DatapointReaderConfig{
-				CassandraAddrs: strings.Split(viper.GetString("cassandra-addrs"), ","),
-				Keyspace:       viper.GetString("cassandra-keyspace"),
-				Timeout:        10 * time.Second,
+			dpr := cassandra.NewDatapointReader(&cassandra.DatapointReaderConfig{
+				Session: sess,
 			})
-			if err != nil {
-				return err
-			}
 			q := querier.NewQuerier(&querier.Config{
 				DatapointReader: dpr,
 				Resolver:        r,
@@ -60,11 +65,11 @@ func Querier() *cobra.Command {
 		},
 	}
 
-	querier.Flags().String("cassandra-addrs", "", "cassandra01.example.com")
-	querier.Flags().String("cassandra-keyspace", "vulcan", "cassandra keyspace to query")
-	querier.Flags().String("es", "http://elasticsearch:9200", "elasticsearch connection url")
-	querier.Flags().Bool("es-sniff", true, "whether or not to sniff additional hosts in the cluster")
-	querier.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
+	querier.Flags().String(flagCassandraAddrs, "", "cassandra01.example.com")
+	querier.Flags().String(flagCassandraKeyspace, "vulcan", "cassandra keyspace to query")
+	querier.Flags().String(flagESAddrs, "http://elasticsearch:9200", "elasticsearch connection url")
+	querier.Flags().Bool(flagESSniff, true, "whether or not to sniff additional hosts in the cluster")
+	querier.Flags().String(flagESIndex, "vulcan", "the elasticsearch index to write documents into")
 
 	return querier
 }
