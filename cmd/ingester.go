@@ -23,6 +23,7 @@ import (
 	"github.com/digitalocean/vulcan/ingester"
 	"github.com/digitalocean/vulcan/kafka"
 	"github.com/gocql/gocql"
+	hostpool "github.com/hailocab/go-hostpool"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
@@ -42,6 +43,10 @@ func Ingester() *cobra.Command {
 			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
 			cluster.Consistency = gocql.LocalOne
 			cluster.ProtoVersion = 4
+			fallbackHostPolicy := gocql.HostPoolHostPolicy(
+				hostpool.NewEpsilonGreedy(nil, 0, &hostpool.LinearEpsilonValueCalculator{}),
+			)
+			cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallbackHostPolicy)
 			sess, err := cluster.CreateSession()
 			if err != nil {
 				return err
