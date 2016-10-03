@@ -15,15 +15,11 @@
 package cmd
 
 import (
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
-
-	"google.golang.org/grpc"
 
 	"github.com/digitalocean/vulcan/forwarder"
 	"github.com/digitalocean/vulcan/kafka"
@@ -31,7 +27,6 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -50,6 +45,7 @@ func Forwarder() *cobra.Command {
 			)
 
 			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
 			// create upstream kafka writer to receive data
 			w, err := kafka.NewWriter(&kafka.WriterConfig{
 				ClientID:    viper.GetString(flagKafkaClientID),
@@ -77,49 +73,6 @@ func Forwarder() *cobra.Command {
 				Writer: w,
 			})
 
-			err = reg.Register(fwd)
-			if err != nil {
-				return err
-			}
-
-			d := forwarder.NewDecompressor()
-
-			lis, err := net.Listen("tcp", viper.GetString(flagAddress))
-			if err != nil {
-				return err
-			}
-			// start both gRPC and http servers and return as soon as either of them have an
-			// error. It is expected that these two servers will either return an error, or run
-			// indefinitely. This will be easier to handle when Prometheus moves away from gRPC
-			// and to an HTTP POST for the generic write API https://github.com/prometheus/prometheus/pull/1957
-			errCh := make(chan error)
-			once := sync.Once{}
-			go func() {
-				server := grpc.NewServer(grpc.RPCDecompressor(d))
-				remote.RegisterWriteServer(server, fwd)
-
-				log.WithFields(log.Fields{
-					"listening_address": viper.GetString(flagAddress),
-				}).Info("starting vulcan forwarder gRPC service")
-				if err := server.Serve(lis); err != nil {
-					once.Do(func() {
-						errCh <- err
-					})
-				}
-			}()
-			go func() {
-				log.WithFields(log.Fields{
-					"listening_address": viper.GetString(flagWebListenAddress),
-					"telemetry_path":    viper.GetString(flagTelemetryPath),
-				}).Info("starting http server for telemetry")
-				http.Handle(viper.GetString(flagTelemetryPath), promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-				if err := http.ListenAndServe(viper.GetString(flagWebListenAddress), nil); err != nil {
-					once.Do(func() {
-						errCh <- err
-					})
-				}
-			}()
-
 			// listen for signals so can gracefully stop kakfa producer
 			go func() {
 				<-signals
@@ -130,16 +83,22 @@ func Forwarder() *cobra.Command {
 				os.Exit(0)
 			}()
 
-			return <-errCh
+			http.Handle("/", forwarder.WriteHandler(fwd, "snappy"))
+			http.Handle(viper.GetString(flagTelemetryPath), promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
+			log.WithFields(log.Fields{
+				"listening_address": viper.GetString(flagAddress),
+			}).Info("starting vulcan forwarder http service")
+
+			return http.ListenAndServe(viper.GetString(flagAddress), nil)
 		},
 	}
 
-	f.Flags().String(flagAddress, ":8888", "grpc server listening address")
+	f.Flags().String(flagAddress, ":8888", "server listening address")
 	f.Flags().String(flagKafkaTopic, "vulcan", "kafka topic to write to")
 	f.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
 	f.Flags().String(flagKafkaClientID, "vulcan-forwarder", "set the kafka client id")
 	f.Flags().String(flagTelemetryPath, "/metrics", "path under which to expose metrics")
-	f.Flags().String(flagWebListenAddress, ":9031", "address to listen on for telemetry")
 	f.Flags().Bool(flagKafkaTrackWrites, false, "track kafka writes for metric scraping and logging")
 	f.Flags().Int(flagKafkaBatchSize, 65536, "batch size of each send of kafka producer messages")
 
