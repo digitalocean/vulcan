@@ -43,9 +43,12 @@ func Ingester() *cobra.Command {
 			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
 			cluster.Consistency = gocql.LocalOne
 			cluster.ProtoVersion = 4
-			fallbackHostPolicy := gocql.HostPoolHostPolicy(
-				hostpool.NewEpsilonGreedy(nil, 0, &hostpool.LinearEpsilonValueCalculator{}),
-			)
+			// Fallback simple host pool distributes queries and prevents sending queries to unresponsive hosts.
+			fallbackHostPolicy := gocql.HostPoolHostPolicy(hostpool.New(nil))
+			// Token-aware policy performs queries against a host responsible for the partition.
+			// TODO in gocql make token-aware able to write to any host for a partition when the
+			// replication factor is > 1.
+			// https://github.com/gocql/gocql/blob/4f49cd01c8939ce7624952fe286c3d08c4be7fa1/policies.go#L331
 			cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallbackHostPolicy)
 			sess, err := cluster.CreateSession()
 			if err != nil {
