@@ -28,6 +28,8 @@ const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn 
 
 // SeriesIterator is a Cassandra-backed implementation of a prometheus SeriesIterator.
 type SeriesIterator struct {
+	local.SeriesIterator
+
 	iter       *gocql.Iter
 	fqmn       string
 	m          metric.Metric

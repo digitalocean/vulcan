@@ -23,7 +23,7 @@ import (
 // model TimeSeries.
 func MetricToTimeSeries(m metric.Metric) model.TimeSeries {
 	ts := model.TimeSeries{
-		Labels:  map[string]string{},
+		Labels:  make(map[string]string, len(m.Metric)),
 		Samples: []*model.Sample{},
 	}
 	for k, v := range m.Metric {

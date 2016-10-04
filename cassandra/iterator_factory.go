@@ -31,7 +31,7 @@ type IteratorFactory struct {
 	Prefetch float64
 }
 
-// Iterator returns a new SeriesIterator
+// Iterator returns a new SeriesIterator.
 func (itrf *IteratorFactory) Iterator(m metric.Metric, from, through model.Time) (local.SeriesIterator, error) {
 	return NewSeriesIterator(&SeriesIteratorConfig{
 		Session:  itrf.Session,
