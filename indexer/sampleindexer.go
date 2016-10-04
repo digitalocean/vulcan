@@ -21,6 +21,5 @@ import "github.com/digitalocean/vulcan/model"
 type SampleIndexer interface {
 	// IndexSample takes in a sample from the message bus and makes indexing
 	// decisions on the target indexing system.
-	IndexSamples(model.TimeSeriesBatch) error
 	IndexSample(*model.TimeSeries) error
 }

@@ -41,8 +41,7 @@ type CachingIndexer struct {
 	MaxDuration time.Duration
 	m           sync.RWMutex
 
-	indexDurations      *prometheus.SummaryVec
-	indexBatchDurations prometheus.Histogram
+	indexDurations *prometheus.SummaryVec
 }
 
 // CachingIndexerConfig represents the configuration of a CachingIndexer object.
@@ -66,15 +65,6 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 			},
 			[]string{"stage", "cache"},
 		),
-		indexBatchDurations: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "indexbatch_duration_seconds",
-				Help:      "Duration of processing of an entire timeseries batch.",
-				Buckets:   prometheus.DefBuckets,
-			},
-		),
 	}
 }
 
@@ -82,29 +72,12 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 // instance's indexDurations and Indexer to the parameter ch.
 func (ci *CachingIndexer) Describe(ch chan<- *prometheus.Desc) {
 	ci.indexDurations.Describe(ch)
-	ci.indexBatchDurations.Describe(ch)
 }
 
 // Collect implements Collector.  Sends metrics collected by indexDurations
 // and Indexer to the parameter ch.
 func (ci *CachingIndexer) Collect(ch chan<- prometheus.Metric) {
 	ci.indexDurations.Collect(ch)
-	ci.indexBatchDurations.Collect(ch)
-}
-
-// IndexSamples checks a entire timeseries batch to see if the samples are
-// indexed.
-func (ci *CachingIndexer) IndexSamples(tsb model.TimeSeriesBatch) error {
-	t0 := time.Now()
-	defer ci.indexBatchDurations.Observe(time.Since(t0).Seconds())
-
-	for _, ts := range tsb {
-		if err := ci.IndexSample(ts); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // IndexSample indexes the sample ts if the sample ts was not already indexed

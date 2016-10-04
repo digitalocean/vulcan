@@ -78,9 +78,8 @@ func Indexer() *cobra.Command {
 
 			// set up caching es sample indexer
 			esIndexer := elasticsearch.NewSampleIndexer(&elasticsearch.SampleIndexerConfig{
-				Client:     client,
-				Index:      viper.GetString("es-index"),
-				NumWorkers: viper.GetInt("num-es-workers"),
+				Client: client,
+				Index:  viper.GetString("es-index"),
 			})
 			sampleIndexer := storage.NewCachingIndexer(&storage.CachingIndexerConfig{
 				Indexer:     esIndexer,
@@ -92,7 +91,6 @@ func Indexer() *cobra.Command {
 				SampleIndexer:      sampleIndexer,
 				Source:             s,
 				NumIndexGoroutines: viper.GetInt("indexer-goroutines"),
-				CleanUp:            esIndexer.Stop,
 			})
 
 			prometheus.MustRegister(i)
@@ -117,8 +115,7 @@ func Indexer() *cobra.Command {
 	Indexer.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
 	Indexer.Flags().Duration("es-writecache-duration", time.Minute*10, "the duration to cache having written a value to es and to skip further writes of the same metric")
 	Indexer.Flags().Uint("indexer-goroutines", 30, "worker goroutines for writing indexes")
-	Indexer.Flags().Uint("max-idle-conn", 2, "max idle connections for fetching from data storage")
-	Indexer.Flags().Uint("num-es-workers", 30, "number of workers to handle ES requests")
+	Indexer.Flags().Uint("max-idle-conn", 30, "max idle connections for fetching from data storage")
 
 	return Indexer
 }

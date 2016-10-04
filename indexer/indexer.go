@@ -16,8 +16,10 @@ package indexer
 
 import (
 	"sync"
+	"time"
 
 	"github.com/digitalocean/vulcan/bus"
+	"github.com/digitalocean/vulcan/model"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,8 +45,8 @@ type Indexer struct {
 
 	cleanUp func()
 
-	indexDurations *prometheus.SummaryVec
-	errorsTotal    *prometheus.CounterVec
+	indexBatchDurations prometheus.Histogram
+	errorsTotal         *prometheus.CounterVec
 }
 
 // Config represents the configuration of an Indexer.  It takes an implmenter
@@ -76,6 +78,15 @@ func NewIndexer(config *Config) *Indexer {
 			},
 			[]string{"stage"},
 		),
+		indexBatchDurations: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "indexbatch_duration_seconds",
+				Help:      "Duration of processing of an entire timeseries batch.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
 
 		once:    new(sync.Once),
 		done:    make(chan struct{}),
@@ -89,12 +100,14 @@ func NewIndexer(config *Config) *Indexer {
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
 	i.errorsTotal.Describe(ch)
+	i.indexBatchDurations.Describe(ch)
 }
 
 // Collect implements prometheus.Collector.  Sends metrics collected by the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
 	i.errorsTotal.Collect(ch)
+	i.indexBatchDurations.Collect(ch)
 }
 
 // Run starts the indexer process of consuming from the bus and indexing to
@@ -126,6 +139,20 @@ func (i *Indexer) Run() error {
 	return i.Source.Error()
 }
 
+// IndexSamples indexes a model.TimeSeriesBatch
+func (i *Indexer) IndexSamples(tsb model.TimeSeriesBatch) error {
+	t0 := time.Now()
+	defer i.indexBatchDurations.Observe(time.Since(t0).Seconds())
+
+	for _, ts := range tsb {
+		if err := i.SampleIndexer.IndexSample(ts); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (i *Indexer) work() error {
 	for {
 		select {
@@ -134,7 +161,7 @@ func (i *Indexer) work() error {
 				return nil
 			}
 
-			if err := i.SampleIndexer.IndexSamples(m.TimeSeriesBatch); err != nil {
+			if err := i.IndexSamples(m.TimeSeriesBatch); err != nil {
 				i.errorsTotal.WithLabelValues("index_sample").Add(1)
 
 				return err
