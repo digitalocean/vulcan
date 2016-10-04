@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at ASC`
@@ -27,6 +29,7 @@ const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn 
 // SeriesIterator is a Cassandra-backed implementation of a prometheus SeriesIterator.
 type SeriesIterator struct {
 	iter       *gocql.Iter
+	fqmn       string
 	m          metric.Metric
 	curr, last *model.SamplePair
 	list       []model.SamplePair
@@ -46,9 +49,9 @@ type SeriesIteratorConfig struct {
 // SeriesIterator. This iterator immediately begins pre-fetching data upon creation.
 func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 	ts := convert.MetricToTimeSeries(config.Metric)
-	fqmn := ts.ID()
 	si := &SeriesIterator{
-		m: config.Metric,
+		m:    config.Metric,
+		fqmn: ts.ID(),
 		curr: &model.SamplePair{
 			Timestamp: local.ZeroSamplePair.Timestamp,
 			Value:     local.ZeroSamplePair.Value,
@@ -65,7 +68,7 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 	// of the prometheus query engine. The si.ready channel signals when the iter is ready
 	// to be used.
 	go func() {
-		si.iter = config.Session.Query(fetchUncompressedSQLIter, fqmn, config.After, config.Before).
+		si.iter = config.Session.Query(fetchUncompressedSQLIter, si.fqmn, config.After, config.Before).
 			PageSize(config.PageSize).
 			Prefetch(config.Prefetch).
 			Iter()
@@ -151,7 +154,7 @@ func (si *SeriesIterator) Close() {
 	<-si.ready
 	err := si.iter.Close()
 	if err != nil {
-		panic(err)
+		log.WithError(err).WithField("fqmn", si.fqmn).Error("error while closing cassandra SeriesIterator")
 	}
 	return
 }
