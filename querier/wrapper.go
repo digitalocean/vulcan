@@ -22,7 +22,6 @@ import (
 	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/storage"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
@@ -125,13 +124,6 @@ func (w *Wrapper) NeedsThrottling() bool {
 // time range and label matchers. The iterators need to be closed
 // after usage.
 func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	ll := log.WithFields(log.Fields{
-		"from":     from,
-		"through":  through,
-		"matchers": matchers,
-	})
-	ll.Debug("QueryRange called")
-
 	mets, err := w.MetricsForLabelMatchers(from, through, matchers)
 	if err != nil {
 		return []local.SeriesIterator{}, nil
@@ -145,17 +137,12 @@ func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.Label
 		itrs = append(itrs, itr)
 	}
 
-	ll.WithField("iterator_count", len(itrs)).Debug("got iterators")
 	return itrs, nil
 }
 
 // QueryInstant returns a list of series iterators for the selected
 // instant and label matchers. The iterators need to be closed after usage.
 func (w *Wrapper) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	log.WithFields(log.Fields{
-		"ts":       ts,
-		"matchers": matchers,
-	}).Debug("QueryInstant called")
 	return w.QueryRange(ts.Add(-stalenessDelta), ts.Add(stalenessDelta), matchers...)
 }
 
@@ -169,11 +156,6 @@ func (w *Wrapper) QueryInstant(ts model.Time, stalenessDelta time.Duration, matc
 // have no samples in the specified interval from the returned map. In
 // doubt, specify model.Earliest for from and model.Latest for through.
 func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error) {
-	ll := log.WithFields(log.Fields{
-		"matcher_sets": matcherSets,
-	})
-	ll.Debug("MetricsForLabelMatchers called")
-
 	result := []metric.Metric{}
 	defer func() {
 		w.matchesFound.Observe(float64(len(result)))
@@ -193,9 +175,6 @@ func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets 
 	if err != nil {
 		return result, err
 	}
-
-	ll.WithField("metrics", result).Debug("metrics retrieved")
-
 	return result, nil
 }
 
@@ -206,19 +185,11 @@ func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets 
 // ZeroSample is returned. The label matching behavior is the same as in
 // MetricsForLabelMatchers.
 func (w *Wrapper) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
-	log.WithFields(log.Fields{
-		"matcher_sets": matcherSets,
-	}).Debug("LastSampleForLabelMatchers called")
-
 	return model.Vector{}, errNotImplemented
 }
 
 // LabelValuesForLabelName gets all of the label values that are associated with a given label name.
 func (w *Wrapper) LabelValuesForLabelName(name model.LabelName) (model.LabelValues, error) {
-	log.WithFields(log.Fields{
-		"name_label": name,
-	}).Debug("LabelValuesForLabelName called")
-
 	vals, err := w.r.Values(string(name))
 	if err != nil {
 		return model.LabelValues{}, err

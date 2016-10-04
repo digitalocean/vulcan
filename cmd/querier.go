@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"strings"
+	"time"
 
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/querier"
@@ -61,12 +62,11 @@ func Querier() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// create cassandra datapoint reader
-			dpr := cassandra.NewDatapointReader(&cassandra.DatapointReaderConfig{
+			itrf := &cassandra.IteratorFactory{
 				Session: sess,
-			})
+			}
 			q := querier.NewQuerier(&querier.Config{
-				DatapointReader: dpr,
+				IteratorFactory: itrf,
 				Resolver:        r,
 			})
 			return q.Run()
@@ -75,6 +75,8 @@ func Querier() *cobra.Command {
 
 	querier.Flags().String(flagCassandraAddrs, "", "cassandra01.example.com")
 	querier.Flags().String(flagCassandraKeyspace, "vulcan", "cassandra keyspace to query")
+	querier.Flags().Int(flagCassandraNumConns, 2, "number of connections to cassandra per node")
+	querier.Flags().Duration(flagCassandraTimeout, time.Second*2, "cassandra timeout duration")
 	querier.Flags().String(flagESAddrs, "http://elasticsearch:9200", "elasticsearch connection url")
 	querier.Flags().Bool(flagESSniff, true, "whether or not to sniff additional hosts in the cluster")
 	querier.Flags().String(flagESIndex, "vulcan", "the elasticsearch index to write documents into")
