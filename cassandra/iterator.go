@@ -29,6 +29,7 @@ type SeriesIterator struct {
 	iter       *gocql.Iter
 	m          metric.Metric
 	curr, last *model.SamplePair
+	list       []model.SamplePair
 	ready      chan struct{}
 }
 
@@ -56,6 +57,7 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 			Timestamp: local.ZeroSamplePair.Timestamp,
 			Value:     local.ZeroSamplePair.Value,
 		},
+		list:  []model.SamplePair{},
 		ready: make(chan struct{}),
 	}
 	// creating a gocql iterator takes time, so we instantiate it inside of a goroutine so
@@ -104,35 +106,39 @@ func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 // higher than the previous call to RangeValues.
 func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
 	<-si.ready
-	result := []model.SamplePair{}
 	// curr == nil means that there are no more values to iterate over.
-	if si.curr == nil {
-		return result
-	}
-	for {
-		// the iterator has advanced past our current interval.
-		if si.curr.Timestamp > r.NewestInclusive {
-			return result
-		}
-		// add curr from previous run to result, but exclude starting local.ZeroValuePair.
-		if si.curr.Timestamp >= r.OldestInclusive {
-			result = append(result, model.SamplePair{
-				Timestamp: si.curr.Timestamp,
-				Value:     si.curr.Value,
-			})
-		}
-		// if we are exactly at the upper time bound, return result and DO NOT advance the iterator
-		// so that this value can also be added to the next call to RangeValues as its lower time bound
-		// value. This assumes that there will be no two samples at the same timestamp (enforced by cassandra schema).
-		if si.curr.Timestamp == r.NewestInclusive {
-			return result
-		}
+	for si.curr != nil {
 		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
 		if !ok {
 			si.curr = nil
-			return result
+			break
+		}
+		si.list = append(si.list, model.SamplePair{
+			Timestamp: si.curr.Timestamp,
+			Value:     si.curr.Value,
+		})
+		if si.curr.Timestamp > r.NewestInclusive {
+			break
 		}
 	}
+	// drop items in si.list that are older than OldestInclusive
+	cropCount := 0
+	for _, curr := range si.list {
+		if curr.Timestamp >= r.OldestInclusive {
+			break
+		}
+		cropCount++
+	}
+	si.list = si.list[cropCount:]
+	// return portion of si.list that is older than NewestInclusive
+	last := len(si.list)
+	for ; last > 0; last-- {
+		curr := si.list[last-1]
+		if curr.Timestamp <= r.NewestInclusive {
+			break
+		}
+	}
+	return si.list[:last]
 }
 
 // Metric returns the metric of the series that the iterator corresponds to.
