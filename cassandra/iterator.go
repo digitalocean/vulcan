@@ -15,28 +15,16 @@
 package cassandra
 
 import (
-	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
 	"github.com/gocql/gocql"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
-
-	log "github.com/Sirupsen/logrus"
 )
 
-const (
-	metricNameKey model.LabelName = "__name__"
-	magicPageSize                 = 120 // about 30 minutes of datapoints at 15s resolution = 30min * 60 seconds/min * 1 datapoint/15seconds
-	magicPrefetch                 = 1.5 // should always have next page ready to go, and half-way through current page start getting the next-next page
-)
 const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at ASC`
 
-// SeriesIterator enables efficient access of sample values in a series. Its
-// methods are not goroutine-safe. A SeriesIterator iterates over a snapshot of
-// a series, i.e. it is safe to continue using a SeriesIterator after or during
-// modifying the corresponding series, but the iterator will represent the state
-// of the series prior to the modification.
+// SeriesIterator is a Cassandra-backed implementation of a prometheus SeriesIterator.
 type SeriesIterator struct {
 	iter       *gocql.Iter
 	m          metric.Metric
@@ -44,20 +32,20 @@ type SeriesIterator struct {
 	ready      chan struct{}
 }
 
+// SeriesIteratorConfig is used in NewSeriesIterator to create a SeriesIterator.
 type SeriesIteratorConfig struct {
 	Session       *gocql.Session
 	Metric        metric.Metric
 	After, Before model.Time
+	PageSize      int
+	Prefetch      float64
 }
 
-func NewSeriesIterator(config *SeriesIteratorConfig) (*SeriesIterator, error) {
-	fqmn, err := convert.MetricToKey(toBusMetric(config.Metric.Metric))
-	if err != nil {
-		return nil, err
-	}
-	log.WithFields(log.Fields{
-		"fqmn": fqmn,
-	}).Debug("new series iterator")
+// NewSeriesIterator creates a Cassandra-backed implementation of a prometheus storage
+// SeriesIterator. This iterator immediately begins pre-fetching data upon creation.
+func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
+	ts := convert.MetricToTimeSeries(config.Metric)
+	fqmn := ts.ID()
 	si := &SeriesIterator{
 		m: config.Metric,
 		curr: &model.SamplePair{
@@ -70,11 +58,18 @@ func NewSeriesIterator(config *SeriesIteratorConfig) (*SeriesIterator, error) {
 		},
 		ready: make(chan struct{}),
 	}
+	// creating a gocql iterator takes time, so we instantiate it inside of a goroutine so
+	// we can return quickly from NewSeriesIterator which is important for the performance
+	// of the prometheus query engine. The si.ready channel signals when the iter is ready
+	// to be used.
 	go func() {
-		si.iter = config.Session.Query(fetchUncompressedSQLIter, fqmn, config.After, config.Before).PageSize(magicPageSize).Prefetch(magicPrefetch).Iter()
+		si.iter = config.Session.Query(fetchUncompressedSQLIter, fqmn, config.After, config.Before).
+			PageSize(config.PageSize).
+			Prefetch(config.Prefetch).
+			Iter()
 		close(si.ready)
 	}()
-	return si, nil
+	return si
 }
 
 // ValueAtOrBeforeTime gets the value that is closest before the given time. In case a value
@@ -104,6 +99,7 @@ Read:
 
 // RangeValues gets all values contained within a given interval.
 func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
+	<-si.ready
 	return []model.SamplePair{}
 }
 
@@ -114,23 +110,10 @@ func (si *SeriesIterator) Metric() metric.Metric {
 
 // Close closes the iterator and releases the underlying data.
 func (si *SeriesIterator) Close() {
+	<-si.ready
 	err := si.iter.Close()
 	if err != nil {
 		panic(err)
 	}
 	return
-}
-
-func toBusMetric(m model.Metric) bus.Metric {
-	bm := bus.Metric{
-		Name:   string(m[metricNameKey]),
-		Labels: map[string]string{},
-	}
-	for k, v := range m {
-		if k == metricNameKey {
-			continue
-		}
-		bm.Labels[string(k)] = string(v)
-	}
-	return bm
 }
