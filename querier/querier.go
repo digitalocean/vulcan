@@ -33,7 +33,7 @@ import (
 type Querier struct {
 	prometheus.Collector
 
-	dpr storage.DatapointReader
+	itr IteratorFactory
 	r   storage.Resolver
 
 	queryDurations *prometheus.SummaryVec
@@ -41,7 +41,7 @@ type Querier struct {
 
 // Config represents the configuration of a Querier object.
 type Config struct {
-	DatapointReader storage.DatapointReader
+	IteratorFactory IteratorFactory
 	Resolver        storage.Resolver
 }
 
@@ -57,7 +57,7 @@ func NewQuerier(config *Config) *Querier {
 			},
 			[]string{"stage"},
 		),
-		dpr: config.DatapointReader,
+		itr: config.IteratorFactory,
 		r:   config.Resolver,
 	}
 }
@@ -76,11 +76,8 @@ func (q *Querier) Collect(ch chan<- prometheus.Metric) {
 
 // Run starts the Querir HTTP service.
 func (q *Querier) Run() error {
-	dr := &DatapointReader{
-		DR: q.dpr,
-	}
 	w, err := NewWrapper(&WrapperConfig{
-		IteratorFactory: dr,
+		IteratorFactory: q.itr,
 		Resolver:        q.r,
 	})
 	if err != nil {
