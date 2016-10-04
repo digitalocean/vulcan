@@ -21,17 +21,14 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-const (
-	magicPageSize = 120 // about 30 minutes of datapoints at 15s resolution = 30min * 60 seconds/min * 1 datapoint/15seconds
-	magicPrefetch = 1.5 // should always have next page ready to go, and half-way through current page start getting the next-next page
-)
-
 // IteratorFactory is able to create SeriesIterator that talk to a IteratorFactory.
 // This bridges the new series iterator prometheus interface to our older cassandra
 // code that was built for a different interface. Eventually, a cassandra storage
 // object should just be able to create iterators directly.
 type IteratorFactory struct {
-	Session *gocql.Session
+	Session  *gocql.Session
+	PageSize int
+	Prefetch float64
 }
 
 // Iterator returns a new SeriesIterator
@@ -41,7 +38,7 @@ func (itrf *IteratorFactory) Iterator(m metric.Metric, from, through model.Time)
 		Metric:   m,
 		After:    from,
 		Before:   through,
-		PageSize: magicPageSize,
-		Prefetch: magicPrefetch,
+		PageSize: itrf.PageSize,
+		Prefetch: itrf.Prefetch,
 	}), nil
 }

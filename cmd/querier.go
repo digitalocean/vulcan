@@ -63,7 +63,9 @@ func Querier() *cobra.Command {
 				return err
 			}
 			itrf := &cassandra.IteratorFactory{
-				Session: sess,
+				Session:  sess,
+				PageSize: viper.GetInt(flagCassandraPageSize),
+				Prefetch: viper.GetFloat64(flagCassandraPrefetch),
 			}
 			q := querier.NewQuerier(&querier.Config{
 				IteratorFactory: itrf,
@@ -75,6 +77,8 @@ func Querier() *cobra.Command {
 
 	querier.Flags().String(flagCassandraAddrs, "", "cassandra01.example.com")
 	querier.Flags().String(flagCassandraKeyspace, "vulcan", "cassandra keyspace to query")
+	querier.Flags().Int(flagCassandraPageSize, magicPageSize, "number of samples to read from cassandra at a time")
+	querier.Flags().Float64(flagCassandraPrefetch, magicPrefetch, "prefetch next page when there are (prefetch * pageSize) number of rows remaining")
 	querier.Flags().Int(flagCassandraNumConns, 2, "number of connections to cassandra per node")
 	querier.Flags().Duration(flagCassandraTimeout, time.Second*2, "cassandra timeout duration")
 	querier.Flags().String(flagESAddrs, "http://elasticsearch:9200", "elasticsearch connection url")

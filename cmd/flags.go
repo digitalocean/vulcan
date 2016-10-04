@@ -14,11 +14,18 @@
 
 package cmd
 
+const (
+	magicPageSize = 120 // about 30 minutes of datapoints at 15s resolution = 30min * 60 seconds/min * 1 datapoint/15seconds
+	magicPrefetch = 1.5 // should always have next page ready to go, and half-way through current page start getting the next-next page
+)
+
 // Vulcan command line flag names.
 const (
 	flagAddress             = "address"
 	flagCassandraAddrs      = "cassandra-addrs"
 	flagCassandraKeyspace   = "cassandra-keyspace"
+	flagCassandraPageSize   = "cassandra-page-size"
+	flagCassandraPrefetch   = "cassandra-prefetch"
 	flagCassandraTimeout    = "cassandra-timeout"
 	flagCassandraNumConns   = "cassandra-num-conns"
 	flagESAddrs             = "es"
