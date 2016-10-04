@@ -74,27 +74,29 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 
 // ValueAtOrBeforeTime gets the value that is closest before the given time. In case a value
 // exists at precisely the given time, that value is returned. If no
-// applicable value exists, ZeroSamplePair is returned.
+// applicable value exists, ZeroSamplePair is returned. This function assumes that
+// ValueAtOrBeforeTime will be called only with incrementing values of t and that
+// this SeriesIterator will only call either ValueAtOrBeforeTime or RangeValues, but
+// not both functions.
 func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	<-si.ready
 	// curr == nil means that there are no more values to iterate over
 	if si.curr == nil {
 		return *si.last
 	}
-	if si.curr.Timestamp > t {
-		return *si.last
+	for {
+		if si.curr.Timestamp > t {
+			return *si.last
+		}
+		si.last.Timestamp = si.curr.Timestamp
+		si.last.Value = si.curr.Value
+		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
+		if !ok {
+			// done iterating; set curr to nil to signal no more values on iter
+			si.curr = nil
+			return *si.last
+		}
 	}
-Read:
-	si.last.Timestamp = si.curr.Timestamp
-	si.last.Value = si.curr.Value
-	if !si.iter.Scan(&si.curr.Timestamp, &si.curr.Value) {
-		si.curr = nil // set curr to nil to signal no more values on iterator
-		return *si.last
-	}
-	if si.curr.Timestamp < t {
-		goto Read
-	}
-	return *si.last
 }
 
 // RangeValues gets all values contained within a given interval.
