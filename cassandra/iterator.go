@@ -80,7 +80,7 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 // not both functions.
 func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	<-si.ready
-	// curr == nil means that there are no more values to iterate over
+	// curr == nil means that there are no more values to iterate over.
 	if si.curr == nil {
 		return *si.last
 	}
@@ -92,17 +92,47 @@ func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 		si.last.Value = si.curr.Value
 		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
 		if !ok {
-			// done iterating; set curr to nil to signal no more values on iter
+			// done iterating; set curr to nil to signal no more values on iter.
 			si.curr = nil
 			return *si.last
 		}
 	}
 }
 
-// RangeValues gets all values contained within a given interval.
+// RangeValues gets all values contained within a given interval. RangeValues assumes
+// that the interval values OldestInclusive and NewestInclusive will always be
+// higher than the previous call to RangeValues.
 func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
 	<-si.ready
-	return []model.SamplePair{}
+	result := []model.SamplePair{}
+	// curr == nil means that there are no more values to iterate over.
+	if si.curr == nil {
+		return result
+	}
+	for {
+		// the iterator has advanced past our current interval.
+		if si.curr.Timestamp > r.NewestInclusive {
+			return result
+		}
+		// add curr from previous run to result, but exclude starting local.ZeroValuePair.
+		if si.curr.Timestamp >= r.OldestInclusive {
+			result = append(result, model.SamplePair{
+				Timestamp: si.curr.Timestamp,
+				Value:     si.curr.Value,
+			})
+		}
+		// if we are exactly at the upper time bound, return result and DO NOT advance the iterator
+		// so that this value can also be added to the next call to RangeValues as its lower time bound
+		// value. This assumes that there will be no two samples at the same timestamp (enforced by cassandra schema).
+		if si.curr.Timestamp == r.NewestInclusive {
+			return result
+		}
+		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
+		if !ok {
+			si.curr = nil
+			return result
+		}
+	}
 }
 
 // Metric returns the metric of the series that the iterator corresponds to.
