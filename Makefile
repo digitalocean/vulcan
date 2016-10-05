@@ -1,40 +1,15 @@
-SHORT_HASH := $(shell git rev-parse --short HEAD)
-VERSION := $(shell git describe --tags --always)
+GIT_SUMMARY := $(shell git describe --tags --dirty --always)
+GO_VERSION := $(shell go version)
+SRCS := $(shell find . -type f -iname '*.go')
 
-.PHONY: all binary docker lint push release source test vendor vet clean
+.PHONY: all bin clean docker licensecheck lint push release tarballs test vendor vet
 
-all: test binary
+###
+# phony targets
 
-binary: target/vulcan
+all: release
 
-docker: target/linux/vulcan
-	@echo ">> building docker image"
-	@docker build -t dovulcan/vulcan:$(SHORT_HASH) .
-
-lint:
-	@echo ">> linting source"
-	@golint ./...
-
-push: docker
-	@echo ">> pushing docker image"
-	@docker push dovulcan/vulcan:$(SHORT_HASH)
-
-# release is created from the src tarball to ensure we have all dependencies included
-# in the tarball. We don't want to rely on glide or 3rd party repos to produce
-# a build since 3rd party repos can go away or be renamed.
-release: target/vulcan-$(VERSION).linux-amd64.tar.gz
-
-source: target/vulcan-$(VERSION)-src.tar.gz
-
-test: vendor
-	@echo ">> running tests"
-	@go test $(shell glide novendor)
-
-vendor: vendor/.touch
-
-vet:
-	@echo ">> vetting source"
-	@go vet $(shell glide novendor)
+bin: target/vulcan_linux_amd64
 
 clean:
 	@echo ">> removing target directory"
@@ -42,65 +17,71 @@ clean:
 	@echo ">> removing vendor directory"
 	@rm -fr vendor
 
-target/vulcan: vendor
-	@echo ">> compiling target/vulcan"
-	@mkdir -p target
-	@go build \
-		-ldflags "-X main.version=$(VERSION)" \
-		-o target/vulcan main.go
+docker: target/.dockertouch
 
-target/linux/vulcan: vendor
-	@echo ">> compiling target/linux/vulcan"
-	@mkdir -p target/linux
-	@GOARCH="amd64" \
-	GOOS="linux" \
-	go build \
-		-ldflags "-X main.version=$(VERSION)" \
-		-o target/linux/vulcan main.go		
+licensecheck:
+	@echo ">> checking for license"
+	@scripts/licensecheck
 
-target/vulcan-$(VERSION)-src.tar.gz: vendor
-	@echo ">> creating source tarball $@"
-	@mkdir -p target
-	@tar \
-		--exclude='./target' \
-		--exclude='.git' \
-		-s '/^\./vulcan-$(VERSION)-src/' \
-		-czf $@ .
+lint:
+	@echo ">> linting source"
+	@glide nv | xargs -L 1 golint
 
-target/vulcan-$(VERSION).linux-amd64.tar.gz: target/vulcan-$(VERSION)-src.tar.gz
-	@echo ">> creating binary release tarball $@"
+push: target/.dockertouch
+	@echo ">> pushing docker image dovulcan/vulcan:$(GIT_SUMMARY)"
+	@docker push dovulcan/vulcan:$(GIT_SUMMARY)
 
-	@rm -fr target/go
-	@mkdir -p target/go/src/github.com/digitalocean/vulcan
-	
-	@tar \
-		-xf target/vulcan-$(VERSION)-src.tar.gz \
-		--strip-components=1 \
-		-C target/go/src/github.com/digitalocean/vulcan
-	
-	@rm -fr target/release
-	@mkdir -p target/release/bin
-	
-	@GOPATH=$(shell pwd)/target/go \
-	GOARCH="amd64" \
-	GOOS="linux" \
-	go build \
-		-ldflags "-X main.version=$(VERSION)" \
-		-o target/release/bin/vulcan \
-		target/go/src/github.com/digitalocean/vulcan/main.go
-	
-	@cp LICENSE README.md target/release/
-	
-	@tar \
-		-s '/target.release/vulcan-$(VERSION).linux-amd64/' \
-		-czf $@ target/release
+release: target/.testtouch licensecheck lint vet tarballs
 
-	@rm -fr target/release
-	@rm -fr target/go
+tarballs: target/vulcan-$(GIT_SUMMARY).linux-amd64.tar.gz target/vulcan-$(GIT_SUMMARY).src-full.tar.gz
+
+test:
+	@echo ">> running tests"
+	@go test $$(glide nv)
+
+vendor: vendor/.touch
+
+vet:
+	@echo ">> vetting source"
+	@go vet $(shell glide novendor)
+
+###
+# real targets
 
 glide.lock: glide.yaml
 	@echo ">> updating glide.lock"
 	@glide up
+
+target/.dockertouch: Dockerfile target/vulcan_linux_amd64
+	@echo ">> building docker image dovulcan/vulcan:$(GIT_SUMMARY)"
+	@docker build -t dovulcan/vulcan:$(GIT_SUMMARY) .
+	@touch target/.dockertouch
+
+target/.testtouch: vendor/.touch $(SRCS)
+	@echo ">> running tests"
+	@go test $$(glide nv)
+	@touch target/.testtouch
+
+target/vulcan_linux_amd64: vendor/.touch $(SRCS)
+	@echo ">> building $@"
+	@GOOS="linux" GOARCH="amd64" go build -ldflags="-X 'main.gitSummary=$(GIT_SUMMARY)' -X 'main.goVersion=$(GO_VERSION)'" -o $@ main.go
+
+target/vulcan_darwin_amd64: vendor/.touch $(SRCS)
+	@echo ">> building $@"
+	@GOOS="darwin" GOARCH="amd64" go build -ldflags="-X 'main.gitSummary=$(GIT_SUMMARY)' -X 'main.goVersion=$(GO_VERSION)'" -o $@ main.go
+
+target/vulcan-$(GIT_SUMMARY).linux-amd64.tar.gz: target/vulcan_linux_amd64 LICENSE README.md
+	@echo ">> creating tarball $@"
+	@rm -fr target/tmp
+	@mkdir -p target/tmp/vulcan-$(GIT_SUMMARY).linux-amd64/bin
+	@cp target/vulcan_linux_amd64 target/tmp/vulcan-$(GIT_SUMMARY).linux-amd64/bin/vulcan
+	@cp LICENSE README.md target/tmp/vulcan-$(GIT_SUMMARY).linux-amd64/
+	@tar czf $@ -C target/tmp/ .
+	@rm -fr target/tmp
+
+target/vulcan-$(GIT_SUMMARY).src-full.tar.gz: $(shell find . -type f -not -path './target/*' -not -path './.git/*')
+	@echo ">> creating tarball $@"
+	@tar -zc --exclude='./target/' --exclude='./.git/' -s '/^\./vulcan-$(GIT_SUMMARY).src-full/' -f $@ .
 
 vendor/.touch: glide.lock glide.yaml
 	@echo ">> installing golang dependencies into vendor directory"

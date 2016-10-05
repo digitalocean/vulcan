@@ -25,8 +25,8 @@ import (
 )
 
 var (
-	hash    string
-	version string
+	gitSummary string
+	goVersion  string
 )
 
 func main() {
@@ -63,7 +63,10 @@ func main() {
 	vulcan.AddCommand(cmd.Querier())
 	vulcan.AddCommand(cmd.Forwarder())
 
-	vulcan.AddCommand(cmd.Version(hash, version))
+	vulcan.AddCommand(cmd.Version(&cmd.VersionConfig{
+		GitSummary: gitSummary,
+		GoVersion:  goVersion,
+	}))
 
 	if err := vulcan.Execute(); err != nil {
 		log.Fatal(err)

@@ -20,7 +20,7 @@ EndOfLicense
 
 # Scan each Go source file for license.
 EXIT=0
-GOFILES=$(find . -name "*.go")
+GOFILES=$(find . -name '*.go' -not -path './vendor/*')
 
 for FILE in $GOFILES; do
 	BLOCK=$(head -n 14 $FILE)
