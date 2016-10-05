@@ -26,3 +26,4 @@ _testmain.go
 *.test
 *.prof
 *.swp
+.makecache

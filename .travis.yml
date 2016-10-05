@@ -12,7 +12,7 @@ before_install:
   - rm glide.tar.gz
 
 script:
-  - make release
+  - make lint vet licensecheck test bin
 
 cache:
   directories:
