@@ -20,13 +20,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// VersionConfig is used to create a Version since the parameters are all
+// strings and easy to order wrong.
+type VersionConfig struct {
+	GitSummary string
+	GoVersion  string
+}
+
 // Version handles the command line option for the Vulcan version.
-func Version(hash, version string) *cobra.Command {
-	return &cobra.Command{
+func Version(config *VersionConfig) *cobra.Command {
+	v := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version number of vulcan",
+		Short: "Version prints the Vulcan version.",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("hash=%s\nversion=%s\n", hash, version)
+			fmt.Printf("%s\n\nGitSummary: %s\nGoVersion: %s\n", config.GitSummary, config.GitSummary, config.GoVersion)
 		},
 	}
+	return v
 }
