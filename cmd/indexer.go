@@ -23,7 +23,6 @@ import (
 	"github.com/digitalocean/vulcan/elasticsearch"
 	"github.com/digitalocean/vulcan/indexer"
 	"github.com/digitalocean/vulcan/kafka"
-	"github.com/digitalocean/vulcan/storage"
 
 	"github.com/olivere/elastic"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,12 +45,6 @@ func Indexer() *cobra.Command {
 				GroupID:  viper.GetString(flagKafkaGroupID),
 				Topics:   []string{viper.GetString(flagKafkaTopic)},
 			})
-			if err != nil {
-				return err
-			}
-
-			// set up elastic search templates for the type of text query we need to run
-			err = elasticsearch.SetupMatchTemplate(viper.GetString("es"))
 			if err != nil {
 				return err
 			}
@@ -81,7 +74,7 @@ func Indexer() *cobra.Command {
 				Client: client,
 				Index:  viper.GetString("es-index"),
 			})
-			sampleIndexer := storage.NewCachingIndexer(&storage.CachingIndexerConfig{
+			sampleIndexer := indexer.NewCachingIndexer(&indexer.CachingIndexerConfig{
 				Indexer:     esIndexer,
 				MaxDuration: viper.GetDuration("es-writecache-duration"),
 			})

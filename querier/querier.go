@@ -19,8 +19,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/digitalocean/vulcan/storage"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
@@ -34,7 +32,7 @@ type Querier struct {
 	prometheus.Collector
 
 	itr IteratorFactory
-	r   storage.Resolver
+	r   Resolver
 
 	queryDurations *prometheus.SummaryVec
 }
@@ -42,7 +40,7 @@ type Querier struct {
 // Config represents the configuration of a Querier object.
 type Config struct {
 	IteratorFactory IteratorFactory
-	Resolver        storage.Resolver
+	Resolver        Resolver
 }
 
 // NewQuerier returns creates a new instance of Querier.

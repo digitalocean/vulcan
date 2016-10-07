@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package indexer
 
 import (
 	"testing"
 	"time"
 
-	"github.com/digitalocean/vulcan/indexer"
 	"github.com/digitalocean/vulcan/model"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type mockIndexer struct {
-	indexer.SampleIndexer
+	SampleIndexer
 	count int
 }
 

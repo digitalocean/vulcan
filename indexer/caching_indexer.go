@@ -12,31 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package indexer
 
 import (
 	"sync"
 	"time"
 
-	"github.com/digitalocean/vulcan/indexer"
 	"github.com/digitalocean/vulcan/model"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
-	namespace = "vulcan"
-	subsystem = "caching_indexer"
+	cacheSubsystem = "caching_indexer"
 )
 
 // CachingIndexer remembers when a metric was indexed last, if it is beyond
 // a provided duration, then the provided Writer is called to write the
 // metric and the time of the write is stored in CachingIndexer.
 type CachingIndexer struct {
-	indexer.SampleIndexer
-	prometheus.Collector
-
-	Indexer     indexer.SampleIndexer
+	Indexer     SampleIndexer
 	LastSeen    map[string]time.Time
 	MaxDuration time.Duration
 	m           sync.RWMutex
@@ -46,7 +41,7 @@ type CachingIndexer struct {
 
 // CachingIndexerConfig represents the configuration of a CachingIndexer object.
 type CachingIndexerConfig struct {
-	Indexer     indexer.SampleIndexer
+	Indexer     SampleIndexer
 	MaxDuration time.Duration
 }
 
@@ -59,7 +54,7 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 		indexDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
-				Subsystem: subsystem,
+				Subsystem: cacheSubsystem,
 				Name:      "duration_seconds",
 				Help:      "Durations of different caching_indexer stages",
 			},

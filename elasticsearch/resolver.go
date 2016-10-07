@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/digitalocean/vulcan/bus"
 	"github.com/digitalocean/vulcan/convert"
-	"github.com/digitalocean/vulcan/storage"
+	"github.com/digitalocean/vulcan/model"
+	"github.com/digitalocean/vulcan/querier"
 
 	"github.com/olivere/elastic"
 )
@@ -51,21 +51,21 @@ func NewResolver(config *ResolverConfig) (*Resolver, error) {
 	}, nil
 }
 
-// Resolve implements the storage.Resolver interface.
-func (r *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
+// Resolve implements the querier.Resolver interface.
+func (r *Resolver) Resolve(matches []*querier.Match) ([]*model.TimeSeries, error) {
 	q := elastic.NewBoolQuery()
 	for _, m := range matches {
 		switch m.Type {
-		case storage.Equal:
+		case querier.Equal:
 			q.Filter(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
-		case storage.NotEqual:
+		case querier.NotEqual:
 			q.MustNot(elastic.NewTermQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
-		case storage.RegexMatch:
+		case querier.RegexMatch:
 			q.Filter(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
-		case storage.RegexNoMatch:
+		case querier.RegexNoMatch:
 			q.MustNot(elastic.NewRegexpQuery(fmt.Sprintf("%s.raw", convert.ESEscape(m.Name)), m.Value))
 		default:
-			return []*bus.Metric{}, fmt.Errorf("unhandled match type")
+			return []*model.TimeSeries{}, fmt.Errorf("unhandled match type")
 		}
 	}
 	sr, err := r.client.Search().
@@ -76,17 +76,19 @@ func (r *Resolver) Resolve(matches []*storage.Match) ([]*bus.Metric, error) {
 		Size(10000). // arbitrarily long TODO handle sizing the result set better
 		Do()
 	if err != nil {
-		return []*bus.Metric{}, err
+		return []*model.TimeSeries{}, err
 	}
-	ml := []*bus.Metric{}
-	for _, hit := range sr.Hits.Hits {
-		m, err := convert.KeyToMetric(hit.Id)
+	tsb := make([]*model.TimeSeries, len(sr.Hits.Hits))
+	for i, hit := range sr.Hits.Hits {
+		l, err := model.LabelsFromTimeSeriesID(hit.Id)
 		if err != nil {
-			return []*bus.Metric{}, err
+			return []*model.TimeSeries{}, err
 		}
-		ml = append(ml, m)
+		tsb[i] = &model.TimeSeries{
+			Labels: l,
+		}
 	}
-	return ml, nil
+	return tsb, nil
 }
 
 // Values returns the unique values for a given metric field. This allows

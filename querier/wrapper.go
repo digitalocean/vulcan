@@ -19,9 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/digitalocean/vulcan/bus"
-	"github.com/digitalocean/vulcan/storage"
-
+	"github.com/digitalocean/vulcan/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
@@ -50,7 +48,7 @@ type Wrapper struct {
 	prometheus.Collector
 
 	f IteratorFactory
-	r storage.Resolver
+	r Resolver
 
 	queryDurations *prometheus.SummaryVec
 	matchesFound   prometheus.Summary
@@ -60,7 +58,7 @@ type Wrapper struct {
 // Wrapper object.
 type WrapperConfig struct {
 	IteratorFactory IteratorFactory
-	Resolver        storage.Resolver
+	Resolver        Resolver
 }
 
 // NewWrapper creates a new instance of PrometheusWrapper
@@ -91,7 +89,7 @@ func NewWrapper(config *WrapperConfig) (*Wrapper, error) {
 	return w, nil
 }
 
-// Append appends a sample to the underlying storage. Depending on the
+// Append appends a sample to the underlying  Depending on the
 // storage implementation, there are different guarantees for the fate
 // of the sample after Append has returned. Remote storage
 // implementation will simply drop samples if they cannot keep up with
@@ -165,17 +163,12 @@ func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets 
 	if err != nil {
 		return result, err
 	}
-	// get matching metrics
-	metrics, err := w.r.Resolve(m)
+	// get matching time series
+	tsb, err := w.r.Resolve(m)
 	if err != nil {
 		return result, err
 	}
-
-	result, err = toMetricMetrics(metrics), nil
-	if err != nil {
-		return result, err
-	}
-	return result, nil
+	return convert.TimeSeriesBatchToMetrics(tsb), nil
 }
 
 // LastSampleForLabelMatchers returns the last sample that has been
@@ -243,74 +236,28 @@ func (w *Wrapper) Collect(ch chan<- prometheus.Metric) {
 	w.queryDurations.Collect(ch)
 }
 
-func toMatches(matchers ...metric.LabelMatchers) ([]*storage.Match, error) {
-	matches := []*storage.Match{}
+func toMatches(matchers ...metric.LabelMatchers) ([]*Match, error) {
+	matches := []*Match{}
 	for _, mt := range matchers {
 		for _, m := range mt {
-			next := &storage.Match{
+			next := &Match{
 				Name:  string(m.Name),
 				Value: string(m.Value),
 			}
 			switch m.Type {
 			case metric.Equal:
-				next.Type = storage.Equal
+				next.Type = Equal
 			case metric.NotEqual:
-				next.Type = storage.NotEqual
+				next.Type = NotEqual
 			case metric.RegexMatch:
-				next.Type = storage.RegexMatch
+				next.Type = RegexMatch
 			case metric.RegexNoMatch:
-				next.Type = storage.RegexNoMatch
+				next.Type = RegexNoMatch
 			default:
-				return []*storage.Match{}, fmt.Errorf("unhandled match type")
+				return []*Match{}, fmt.Errorf("unhandled match type")
 			}
 			matches = append(matches, next)
 		}
 	}
 	return matches, nil
-}
-
-func toMetricMetric(bm *bus.Metric) metric.Metric {
-	m := metric.Metric{
-		Metric: toModelMetric(bm),
-	}
-	return m
-}
-
-func toMetricMetrics(in []*bus.Metric) []metric.Metric {
-	out := make([]metric.Metric, 0, len(in))
-	for _, m := range in {
-		out = append(out, toMetricMetric(m))
-	}
-	return out
-}
-
-func toModelMetrics(in []*bus.Metric) []model.Metric {
-	out := make([]model.Metric, 0, len(in))
-	for _, m := range in {
-		out = append(out, toModelMetric(m))
-	}
-	return out
-}
-
-func toModelMetric(bm *bus.Metric) model.Metric {
-	m := model.Metric{}
-	for k, v := range bm.Labels {
-		m[model.LabelName(k)] = model.LabelValue(v)
-	}
-	m[metricNameKey] = model.LabelValue(bm.Name)
-	return m
-}
-
-func toBusMetric(m model.Metric) bus.Metric {
-	bm := bus.Metric{
-		Name:   string(m[metricNameKey]),
-		Labels: map[string]string{},
-	}
-	for k, v := range m {
-		if k == metricNameKey {
-			continue
-		}
-		bm.Labels[string(k)] = string(v)
-	}
-	return bm
 }

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/convert"
-	"github.com/digitalocean/vulcan/indexer"
 	"github.com/digitalocean/vulcan/model"
 
 	"github.com/olivere/elastic"
@@ -34,9 +33,6 @@ const (
 // SampleIndexer represents an object that takes bus messages and
 // makes indexing decisions on the target ElasticSearch cluster.
 type SampleIndexer struct {
-	indexer.SampleIndexer
-	prometheus.Collector
-
 	Client *elastic.Client
 	Index  string
 

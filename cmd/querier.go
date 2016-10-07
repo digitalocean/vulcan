@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/cassandra"
+	"github.com/digitalocean/vulcan/elasticsearch"
 	"github.com/digitalocean/vulcan/querier"
-	"github.com/digitalocean/vulcan/storage/elasticsearch"
 	"github.com/gocql/gocql"
 	hostpool "github.com/hailocab/go-hostpool"
 
