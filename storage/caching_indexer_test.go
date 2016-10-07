@@ -18,19 +18,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digitalocean/vulcan/bus"
-	"github.com/digitalocean/vulcan/convert"
+	"github.com/digitalocean/vulcan/indexer"
+	"github.com/digitalocean/vulcan/model"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type mockIndexer struct {
-	SampleIndexer
+	indexer.SampleIndexer
 	count int
 }
 
-func (mi *mockIndexer) IndexSample(*bus.Sample) error {
+func (mi *mockIndexer) IndexSample(ts *model.TimeSeries) error {
 	mi.count++
+	return nil
+}
+
+func (mi mockIndexer) IndexSamples(tsb model.TimeSeriesBatch) error {
+	for _, ts := range tsb {
+		mi.IndexSample(ts)
+	}
 	return nil
 }
 
@@ -88,25 +95,27 @@ func TestCachingIndexer(t *testing.T) {
 			insertCount: 4,
 		},
 	}
+
 	for _, test := range tests {
-		s := &bus.Sample{
-			Metric: bus.Metric{
-				Name:   test.metric,
-				Labels: map[string]string{},
+		ts := &model.TimeSeries{
+			Labels: map[string]string{
+				"__name__": test.metric,
 			},
-			Datapoint: bus.Datapoint{
-				Timestamp: bus.Timestamp(0),
-				Value:     0.0,
+			Samples: []*model.Sample{
+				{
+					TimestampMS: 0,
+					Value:       0.0,
+				},
 			},
 		}
-		err := ci.indexSample(s, test.at)
+
+		err := ci.indexSample(ts, test.at)
 		if err != nil {
 			t.Error(err)
 		}
-		key, err := convert.MetricToKey(s.Metric)
-		if err != nil {
-			t.Error(err)
-		}
+
+		key := ts.ID()
+
 		last, ok := ci.LastSeen[key]
 		if !ok {
 			t.Errorf("expected metric key to exist in cache but not found %s", key)

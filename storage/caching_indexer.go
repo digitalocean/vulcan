@@ -18,19 +18,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/digitalocean/vulcan/bus"
-	"github.com/digitalocean/vulcan/convert"
+	"github.com/digitalocean/vulcan/indexer"
+	"github.com/digitalocean/vulcan/model"
 
 	"github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	namespace = "vulcan"
+	subsystem = "caching_indexer"
 )
 
 // CachingIndexer remembers when a metric was indexed last, if it is beyond
 // a provided duration, then the provided Writer is called to write the
 // metric and the time of the write is stored in CachingIndexer.
 type CachingIndexer struct {
-	SampleIndexer
+	indexer.SampleIndexer
+	prometheus.Collector
 
-	Indexer     SampleIndexer
+	Indexer     indexer.SampleIndexer
 	LastSeen    map[string]time.Time
 	MaxDuration time.Duration
 	m           sync.RWMutex
@@ -40,7 +46,7 @@ type CachingIndexer struct {
 
 // CachingIndexerConfig represents the configuration of a CachingIndexer object.
 type CachingIndexerConfig struct {
-	Indexer     SampleIndexer
+	Indexer     indexer.SampleIndexer
 	MaxDuration time.Duration
 }
 
@@ -52,9 +58,9 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 		MaxDuration: config.MaxDuration,
 		indexDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Namespace: "vulcan",
-				Subsystem: "caching_indexer",
-				Name:      "duration_nanoseconds",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "duration_seconds",
 				Help:      "Durations of different caching_indexer stages",
 			},
 			[]string{"stage", "cache"},
@@ -66,42 +72,45 @@ func NewCachingIndexer(config *CachingIndexerConfig) *CachingIndexer {
 // instance's indexDurations and Indexer to the parameter ch.
 func (ci *CachingIndexer) Describe(ch chan<- *prometheus.Desc) {
 	ci.indexDurations.Describe(ch)
-	ci.Indexer.Describe(ch)
 }
 
 // Collect implements Collector.  Sends metrics collected by indexDurations
 // and Indexer to the parameter ch.
 func (ci *CachingIndexer) Collect(ch chan<- prometheus.Metric) {
 	ci.indexDurations.Collect(ch)
-	ci.Indexer.Collect(ch)
 }
 
-// IndexSample indexes the sample s if the sample s was not already indexed
+// IndexSample indexes the sample ts if the sample ts was not already indexed
 // within the set MaxDuration.
-func (ci *CachingIndexer) IndexSample(s *bus.Sample) error {
-	return ci.indexSample(s, time.Now())
+func (ci *CachingIndexer) IndexSample(ts *model.TimeSeries) error {
+	return ci.indexSample(ts, time.Now())
 }
 
-func (ci *CachingIndexer) indexSample(s *bus.Sample, at time.Time) error {
-	t0 := time.Now()
-	key, err := convert.MetricToKey(s.Metric)
-	if err != nil {
-		return err
-	}
+func (ci *CachingIndexer) indexSample(ts *model.TimeSeries, at time.Time) error {
+	key := ts.ID()
+
 	ci.m.RLock()
 	last, ok := ci.LastSeen[key]
 	ci.m.RUnlock()
 	if ok && at.Sub(last) < ci.MaxDuration {
-		ci.indexDurations.WithLabelValues("index_sample", "hit").Observe(float64(time.Since(t0).Nanoseconds()))
+		ci.indexDurations.WithLabelValues("index_sample", "hit").Observe(
+			time.Since(at).Seconds(),
+		)
+
 		return nil
 	}
-	err = ci.Indexer.IndexSample(s)
-	if err != nil {
+
+	if err := ci.Indexer.IndexSample(ts); err != nil {
 		return err
 	}
+
 	ci.m.Lock()
 	ci.LastSeen[key] = at
 	ci.m.Unlock()
-	ci.indexDurations.WithLabelValues("index_sample", "miss").Observe(float64(time.Since(t0).Nanoseconds()))
+
+	ci.indexDurations.WithLabelValues("index_sample", "miss").Observe(
+		float64(time.Since(at).Seconds()),
+	)
+
 	return nil
 }

@@ -19,143 +19,169 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/bus"
-	"github.com/digitalocean/vulcan/storage"
+	"github.com/digitalocean/vulcan/model"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type workPayload struct {
-	s  *bus.Sample
-	wg *sync.WaitGroup
-}
+const (
+	namespace = "vulcan"
+	subsystem = "indexer"
+)
 
 // Indexer represents an object that consumes metrics from a message bus and
 // writes them to indexing system.
 type Indexer struct {
 	prometheus.Collector
-	Source        bus.AckSource
-	SampleIndexer storage.SampleIndexer
 
-	indexDurations     *prometheus.SummaryVec
-	errorsTotal        *prometheus.CounterVec
-	work               chan workPayload
+	Source        bus.Source
+	SampleIndexer SampleIndexer
+
 	numIndexGoroutines int
+
+	once *sync.Once
+	done chan struct{}
+
+	cleanUp func()
+
+	indexBatchDurations prometheus.Histogram
+	errorsTotal         *prometheus.CounterVec
 }
 
 // Config represents the configuration of an Indexer.  It takes an implmenter
 // Acksource of the target message bus and an implmenter of SampleIndexer of
 // the target indexing system.
 type Config struct {
-	Source             bus.AckSource
-	SampleIndexer      storage.SampleIndexer
+	Source             bus.Source
+	SampleIndexer      SampleIndexer
 	NumIndexGoroutines int
+	// CleanUp represents a clean up function that gets called when the Stop function
+	// gets called and it is not nil.  Currently Stop only calls close on the Indexer's
+	// done channel which stops all worker goroutines.
+	CleanUp func()
 }
 
 // NewIndexer creates a new instance of an Indexer.
 func NewIndexer(config *Config) *Indexer {
 	i := &Indexer{
-		Source:        config.Source,
-		SampleIndexer: config.SampleIndexer,
+		Source:             config.Source,
+		SampleIndexer:      config.SampleIndexer,
+		numIndexGoroutines: config.NumIndexGoroutines,
 
-		indexDurations: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace: "vulcan",
-				Subsystem: "indexer",
-				Name:      "duration_nanoseconds",
-				Help:      "Durations of different indexer stages",
-			},
-			[]string{"stage"},
-		),
 		errorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "vulcan",
-				Subsystem: "indexer",
+				Namespace: namespace,
+				Subsystem: subsystem,
 				Name:      "errors_total",
 				Help:      "Total number of errors of indexer stages",
 			},
 			[]string{"stage"},
 		),
-		work:               make(chan workPayload),
-		numIndexGoroutines: config.NumIndexGoroutines,
+		indexBatchDurations: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "indexbatch_duration_seconds",
+				Help:      "Duration of processing of an entire timeseries batch.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+
+		once:    new(sync.Once),
+		done:    make(chan struct{}),
+		cleanUp: config.CleanUp,
 	}
-	for n := 0; n < i.numIndexGoroutines; n++ {
-		go i.worker()
-	}
+
 	return i
 }
 
 // Describe implements prometheus.Collector.  Sends decriptors of the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
-	i.indexDurations.Describe(ch)
 	i.errorsTotal.Describe(ch)
-	i.SampleIndexer.Describe(ch)
+	i.indexBatchDurations.Describe(ch)
 }
 
 // Collect implements prometheus.Collector.  Sends metrics collected by the
 // instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
 func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
-	i.indexDurations.Collect(ch)
 	i.errorsTotal.Collect(ch)
-	i.SampleIndexer.Collect(ch)
+	i.indexBatchDurations.Collect(ch)
 }
 
 // Run starts the indexer process of consuming from the bus and indexing to
 // the target indexing system.
 func (i *Indexer) Run() error {
-	log.Info("running...")
-	ch := i.Source.Chan()
-
-	for payload := range ch {
-		log.WithFields(log.Fields{
-			"payload": payload.SampleGroup,
-		}).Debug("distributing sample group to workers")
-
-		i.indexSampleGroup(payload.SampleGroup)
-		payload.Done(nil)
-	}
-
-	return i.Source.Err()
-}
-
-func (i *Indexer) indexSampleGroup(sg bus.SampleGroup) {
 	var (
-		t0 = time.Now()
-		wg = &sync.WaitGroup{}
+		wg       sync.WaitGroup
+		writeErr error
 	)
 
-	wg.Add(len(sg))
+	log.Info("running")
 
-	for _, s := range sg {
-		i.work <- workPayload{
-			s:  s,
-			wg: wg,
-		}
+	for n := 0; n < i.numIndexGoroutines; n++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err := i.work(); err != nil {
+				writeErr = err
+			}
+		}()
 	}
-
 	wg.Wait()
-	i.indexDurations.WithLabelValues("index_sample_group").Observe(float64(time.Since(t0).Nanoseconds()))
+
+	if writeErr != nil {
+		return writeErr
+	}
+	return i.Source.Error()
 }
 
-func (i *Indexer) worker() {
-	for w := range i.work {
-		var (
-			t0 = time.Now()
-			ll = log.WithFields(log.Fields{"sample": w.s})
-		)
+// IndexSamples indexes a model.TimeSeriesBatch
+func (i *Indexer) IndexSamples(tsb model.TimeSeriesBatch) error {
+	t0 := time.Now()
+	defer i.indexBatchDurations.Observe(time.Since(t0).Seconds())
 
-		ll.Debug("writing sample")
-
-		err := i.SampleIndexer.IndexSample(w.s)
-		w.wg.Done()
-		if err != nil {
-			ll.WithError(err).Error("could not write sample to index storage")
-
-			i.errorsTotal.WithLabelValues("index_sample").Add(1)
-			continue
+	for _, ts := range tsb {
+		if err := i.SampleIndexer.IndexSample(ts); err != nil {
+			return err
 		}
-
-		i.indexDurations.WithLabelValues("index_sample").Observe(float64(time.Since(t0).Nanoseconds()))
 	}
+
+	return nil
+}
+
+func (i *Indexer) work() error {
+	for {
+		select {
+		case m, ok := <-i.Source.Messages():
+			if !ok {
+				return nil
+			}
+
+			if err := i.IndexSamples(m.TimeSeriesBatch); err != nil {
+				i.errorsTotal.WithLabelValues("index_sample").Add(1)
+
+				return err
+			}
+
+			m.Ack()
+
+		case <-i.done:
+			return nil
+		}
+	}
+}
+
+// Stop gracefully stops the indexer.  Takes a function f that can do any additional
+// clean up work.
+func (i *Indexer) Stop() {
+	i.once.Do(func() {
+		if i.cleanUp != nil {
+			i.cleanUp()
+		}
+		close(i.done)
+	})
 }

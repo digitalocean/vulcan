@@ -40,16 +40,15 @@ func Indexer() *cobra.Command {
 		Short: "consumes metrics from the bus and makes them searchable",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// get kafka source
-			source, err := kafka.NewAckSource(&kafka.AckSourceConfig{
-				Addrs:     strings.Split(viper.GetString("kafka-addrs"), ","),
-				ClientID:  viper.GetString("kafka-client-id"),
-				Converter: kafka.DefaultConverter{},
-				Topic:     viper.GetString("kafka-topic"),
+			s, err := kafka.NewSource(&kafka.SourceConfig{
+				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
+				ClientID: viper.GetString(flagKafkaClientID),
+				GroupID:  viper.GetString(flagKafkaGroupID),
+				Topics:   []string{viper.GetString(flagKafkaTopic)},
 			})
 			if err != nil {
 				return err
 			}
-			prometheus.MustRegister(source)
 
 			// set up elastic search templates for the type of text query we need to run
 			err = elasticsearch.SetupMatchTemplate(viper.GetString("es"))
@@ -90,10 +89,14 @@ func Indexer() *cobra.Command {
 			// create indexer and run
 			i := indexer.NewIndexer(&indexer.Config{
 				SampleIndexer:      sampleIndexer,
-				Source:             source,
+				Source:             s,
 				NumIndexGoroutines: viper.GetInt("indexer-goroutines"),
 			})
+
 			prometheus.MustRegister(i)
+			prometheus.MustRegister(esIndexer)
+			prometheus.MustRegister(sampleIndexer)
+
 			go func() {
 				http.Handle("/metrics", prometheus.Handler())
 				http.ListenAndServe(":8080", nil)
@@ -103,15 +106,16 @@ func Indexer() *cobra.Command {
 		},
 	}
 
-	Indexer.Flags().String("kafka-addrs", "", "one.example.com:9092,two.example.com:9092")
-	Indexer.Flags().String("kafka-client-id", "vulcan-indexer", "set the kafka client id")
-	Indexer.Flags().String("kafka-topic", "vulcan", "topic to read in kafka")
+	Indexer.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	Indexer.Flags().String(flagKafkaClientID, "vulcan-indexer", "set the kafka client id")
+	Indexer.Flags().String(flagKafkaTopic, "vulcan", "topic to read in kafka")
+	Indexer.Flags().String(flagKafkaGroupID, "vulcan-indexer", "workers with the same groupID will join the same Kafka ConsumerGroup")
 	Indexer.Flags().String("es", "http://elasticsearch:9200", "elasticsearch connection url")
 	Indexer.Flags().Bool("es-sniff", true, "whether or not to sniff additional hosts in the cluster")
 	Indexer.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
 	Indexer.Flags().Duration("es-writecache-duration", time.Minute*10, "the duration to cache having written a value to es and to skip further writes of the same metric")
-	Indexer.Flags().Uint("indexer-goroutines", 400, "worker goroutines for writing indexes")
-	Indexer.Flags().Uint("max-idle-conn", 400, "max idle connections for fetching from data storage")
+	Indexer.Flags().Uint("indexer-goroutines", 30, "worker goroutines for writing indexes")
+	Indexer.Flags().Uint("max-idle-conn", 30, "max idle connections for fetching from data storage")
 
 	return Indexer
 }
