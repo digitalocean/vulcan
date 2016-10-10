@@ -16,6 +16,7 @@ package convert
 
 import (
 	"github.com/digitalocean/vulcan/model"
+	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -30,4 +31,26 @@ func MetricToTimeSeries(m metric.Metric) model.TimeSeries {
 		ts.Labels[string(k)] = string(v)
 	}
 	return ts
+}
+
+// TimeSeriesToMetric converts the Vulcan storage metric type to a prometheus
+// storage metric type.
+func TimeSeriesToMetric(ts *model.TimeSeries) metric.Metric {
+	m := metric.Metric{
+		Metric: make(prommodel.Metric, len(ts.Labels)),
+	}
+	for k, v := range ts.Labels {
+		m.Metric[prommodel.LabelName(k)] = prommodel.LabelValue(v)
+	}
+	return m
+}
+
+// TimeSeriesBatchToMetrics converts the Vulcan TimeSeriesBatch to a slice of
+// prometheus storage metric type.
+func TimeSeriesBatchToMetrics(tsb model.TimeSeriesBatch) []metric.Metric {
+	result := make([]metric.Metric, len(tsb))
+	for i, ts := range tsb {
+		result[i] = TimeSeriesToMetric(ts)
+	}
+	return result
 }

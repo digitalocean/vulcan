@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package querier
 
-import "github.com/digitalocean/vulcan/bus"
+import "github.com/digitalocean/vulcan/model"
 
 // MatchType is an enum representing a PromQL label match from "=", "!=", "=~"
 // or "!~"
@@ -43,7 +43,7 @@ type Match struct {
 // on what metrics exist.
 type Resolver interface {
 	// Resolve makes a query using the provided key value pairs of query
-	// params and transforms the results to Vulcan Metric type.
-	Resolve([]*Match) ([]*bus.Metric, error)
+	// params and transforms the results to TimeSeries.
+	Resolve([]*Match) ([]*model.TimeSeries, error)
 	Values(field string) ([]string, error)
 }
