@@ -57,11 +57,7 @@ func Forwarder() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			err = reg.Register(w)
-			if err != nil {
-				return err
-			}
+			reg.MustRegister(w)
 
 			log.WithFields(log.Fields{
 				"kafka_client_id": viper.GetString(flagKafkaClientID),
@@ -72,6 +68,7 @@ func Forwarder() *cobra.Command {
 			fwd := forwarder.NewForwarder(&forwarder.Config{
 				Writer: w,
 			})
+			reg.MustRegister(fwd)
 
 			// listen for signals so can gracefully stop kakfa producer
 			go func() {
