@@ -29,6 +29,7 @@ const (
 	subsystem = "cassandra"
 
 	writeTTLSampleCQL = `UPDATE uncompressed USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
+	writeTTLBlobCQL   = `UPDATE compressed USING TTL ? SET value = ? WHERE fqmn = ? AND start = ?`
 )
 
 // Writer implements ingester.Writer to persist TimeSeriesBatch samples
@@ -41,6 +42,7 @@ type Writer struct {
 	ttlSeconds int64
 
 	batchWriteDuration  prometheus.Histogram
+	blobWriteDuration   prometheus.Histogram
 	sampleWriteDuration prometheus.Histogram
 	workerCount         *prometheus.GaugeVec
 }
@@ -48,6 +50,7 @@ type Writer struct {
 // Describe implements prometheus.Collector.
 func (w *Writer) Describe(ch chan<- *prometheus.Desc) {
 	w.batchWriteDuration.Describe(ch)
+	w.blobWriteDuration.Describe(ch)
 	w.sampleWriteDuration.Describe(ch)
 	w.workerCount.Describe(ch)
 }
@@ -55,6 +58,7 @@ func (w *Writer) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (w *Writer) Collect(ch chan<- prometheus.Metric) {
 	w.batchWriteDuration.Collect(ch)
+	w.blobWriteDuration.Collect(ch)
 	w.sampleWriteDuration.Collect(ch)
 	w.workerCount.Collect(ch)
 }
@@ -88,6 +92,15 @@ func NewWriter(config *WriterConfig) *Writer {
 				Subsystem: subsystem,
 				Name:      "batch_write_duration_seconds",
 				Help:      "Histogram of seconds elapsed to write a batch.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		blobWriteDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "blob_write_duration_seconds",
+				Help:      "Histogram of seconds elapsed to write a blob.",
 				Buckets:   prometheus.DefBuckets,
 			},
 		),
@@ -141,6 +154,16 @@ func (w *Writer) Write(tsb model.TimeSeriesBatch) error {
 	default:
 		return nil
 	}
+}
+
+// WriteBlob puts a pre-compressed binary blob of metrics into the cassandra
+// compressed table.
+func (w *Writer) WriteBlob(b []byte, fqmn string, start int64) error {
+	t0 := time.Now()
+	defer func() {
+		w.blobWriteDuration.Observe(time.Since(t0).Seconds())
+	}()
+	return w.s.Query(writeTTLBlobCQL, w.ttlSeconds, b, fqmn, start).Exec()
 }
 
 func (w *Writer) worker() {

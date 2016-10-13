@@ -55,12 +55,12 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 		m:    config.Metric,
 		fqmn: ts.ID(),
 		curr: &model.SamplePair{
-			Timestamp: local.ZeroSamplePair.Timestamp,
-			Value:     local.ZeroSamplePair.Value,
+			Timestamp: model.ZeroSamplePair.Timestamp,
+			Value:     model.ZeroSamplePair.Value,
 		},
 		last: &model.SamplePair{
-			Timestamp: local.ZeroSamplePair.Timestamp,
-			Value:     local.ZeroSamplePair.Value,
+			Timestamp: model.ZeroSamplePair.Timestamp,
+			Value:     model.ZeroSamplePair.Value,
 		},
 		list:  []model.SamplePair{},
 		ready: make(chan struct{}),

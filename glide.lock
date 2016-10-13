@@ -1,6 +1,11 @@
-hash: 154ff1cc69f7bef811a0bbb56c78fbb721e88259844d1c6adf5ade8b8606070e
-updated: 2016-09-21T15:09:06.436271319+02:00
+hash: f2be9d15997999aaee43e4c201e30470c15045b816f186c3c9ca33903d60fb8e
+updated: 2016-10-13T16:56:06.840329579-06:00
 imports:
+- name: cloud.google.com/go
+  version: 07f82cd40595eddb6b6500701401032dd0bd92e0
+  subpackages:
+  - compute/metadata
+  - internal
 - name: github.com/aws/aws-sdk-go
   version: a11ddd7a070196035bc94b6c04a2a0114c06a395
   subpackages:
@@ -23,12 +28,12 @@ imports:
   - internal/signer/v4
   - service/ec2
 - name: github.com/Azure/azure-sdk-for-go
-  version: 63d3f3e3b12ffb726ba3f72fef1aa8c1c7cd1012
+  version: 91f3d4a4d024e3c0d4d9412916d05cf84504a616
   subpackages:
   - arm/compute
   - arm/network
 - name: github.com/Azure/go-autorest
-  version: 3a30515cff8ca0504593132b55cd9e5aa2136f74
+  version: d85a02c05b762ad45a3c6e973260c23dfe1ac798
   subpackages:
   - autorest
   - autorest/azure
@@ -47,6 +52,8 @@ imports:
   - spew
 - name: github.com/dgrijalva/jwt-go
   version: 63734eae1ef55eaac06fdc0f312615f2e321e273
+- name: github.com/dgryski/go-tsz
+  version: 6d3fe56fbb2a1013b1f7dc4d05cc4a3a793ce13f
 - name: github.com/eapache/go-resiliency
   version: b86b1ec0dd4209a588dc1285cdd471e73525c0b3
   subpackages:
@@ -56,15 +63,15 @@ imports:
 - name: github.com/eapache/queue
   version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
 - name: github.com/fsnotify/fsnotify
-  version: f12c6236fe7b5cf6bcf30e5935d08cb079d78334
+  version: bd2828f9f176e52d7222e565abb2d338d3f3c103
 - name: github.com/gocql/gocql
-  version: 89e1c0f309816323d37394c9f7a4a918301f609f
+  version: ffae44103aa14ada9e2b342329f44ce354f399fd
   subpackages:
   - internal/lru
   - internal/murmur
   - internal/streams
 - name: github.com/golang/protobuf
-  version: 1f49d83d9aa00e6ce4fc8258c71cc7786aec968a
+  version: 98fa357170587e470c5f27d3c3ea0947b71eb455
   subpackages:
   - proto
 - name: github.com/golang/snappy
@@ -72,13 +79,13 @@ imports:
 - name: github.com/hailocab/go-hostpool
   version: e80d13ce29ede4452c43dea11e79b9bc8a15b478
 - name: github.com/hashicorp/consul
-  version: 67a03d57b5851011e5601ee6e7e3d05699548462
+  version: 41f1764434246ba7ee91625fb9a23d94ae6d6e19
   subpackages:
   - api
 - name: github.com/hashicorp/go-cleanhttp
   version: ad28ea4487f05916463e2423a55166280e8254b5
 - name: github.com/hashicorp/hcl
-  version: ef8133da8cda503718a74741312bf50821e6de79
+  version: 6f5bfed9a0a22222fbe4e731ae3481730ba41e93
   subpackages:
   - hcl/ast
   - hcl/parser
@@ -89,18 +96,18 @@ imports:
   - json/scanner
   - json/token
 - name: github.com/hashicorp/serf
-  version: 555e0dcbb180ecbd03431adc28226bb3192558bc
+  version: 1d4fa605f6ff3ed628d7ae5eda7c0e56803e72a5
   subpackages:
   - coordinate
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/influxdata/influxdb
-  version: 7e515cf5f7c298abd8aae62ed1f7bb85601a4b4d
+  version: b66374eb1f748065f7c5fdd28e11058a42cdbc6d
   subpackages:
   - models
   - pkg/escape
 - name: github.com/influxdb/influxdb
-  version: 7e515cf5f7c298abd8aae62ed1f7bb85601a4b4d
+  version: b66374eb1f748065f7c5fdd28e11058a42cdbc6d
   subpackages:
   - client
 - name: github.com/julienschmidt/httprouter
@@ -116,19 +123,19 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/miekg/dns
-  version: db96a2b759cdef4f11a34506a42eb8d1290c598e
+  version: fc4e1e2843d86c346d7203160cfdbf14fa654a9b
 - name: github.com/mitchellh/mapstructure
-  version: ca63d7c062ee3c9f34db231e352b60012b4fd0c1
+  version: a6ef2f080c66d0a2e94e97cf74f80f772855da63
 - name: github.com/olivere/elastic
   version: 0e48129397ff05068bb2909503dd2fef1644c9db
 - name: github.com/pelletier/go-buffruneio
   version: df1e16fde7fc330a0ca68167c23bf7ed6ac31d6d
 - name: github.com/pelletier/go-toml
-  version: 31055c2ff0bb0c7f9095aec0d220aed21108121e
+  version: 45932ad32dfdd20826f5671da37a5f3ce9f26a8d
 - name: github.com/pkg/errors
   version: 01fa4104b9c248c8945d14d9f128454d5b28d595
 - name: github.com/pkg/sftp
-  version: 8197a2e580736b78d704be0fc47b2324c0591a32
+  version: 4d0e916071f68db74f8a73926335f809396d6b42
 - name: github.com/prometheus/client_golang
   version: c5b7fccd204277076155f10851dad72b76a49317
   subpackages:
@@ -139,7 +146,7 @@ imports:
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 9a94032291f2192936512bab367bc45e77990d6a
+  version: 85637ea67b04b5c3bb25e671dacded2977f8f9f6
   subpackages:
   - expfmt
   - internal/bitbucket.org/ww/goautoneg
@@ -149,7 +156,7 @@ imports:
 - name: github.com/prometheus/procfs
   version: abf152e5f3e97f2fafac028d2cc06c1feb87ffa5
 - name: github.com/prometheus/prometheus
-  version: ac374aa6748e1382dbeb72a00abf47d982ee8fff
+  version: dd66f2e94b2b662804b9aa1b6a50587b990ba8b7
   subpackages:
   - config
   - notifier
@@ -164,6 +171,7 @@ imports:
   - rules
   - storage
   - storage/local
+  - storage/local/chunk
   - storage/local/codable
   - storage/local/index
   - storage/metric
@@ -185,6 +193,8 @@ imports:
   version: 87e1bca4477a3cc767ca71be023ced183d74e538
   subpackages:
   - zk
+- name: github.com/serialx/hashring
+  version: 75d57fa264ad17fd929304dfdb02c8e278c5c01c
 - name: github.com/Shopify/sarama
   version: bd61cae2be85fa6ff40eb23dcdd24567967ac2ae
 - name: github.com/Sirupsen/logrus
@@ -195,19 +205,19 @@ imports:
   - mem
   - sftp
 - name: github.com/spf13/cast
-  version: 60e7a69a428e9ac1cf7e0c865fc2fe810d34363e
+  version: 2580bc98dc0e62908119e4737030cc2fdfc45e4c
 - name: github.com/spf13/cobra
-  version: 9c28e4bbd74e5c3ed7aacbc552b2cab7cfdfe744
+  version: ec2fe7859914a5106dcab4e7901633d959bfc2f4
 - name: github.com/spf13/jwalterweatherman
   version: 33c24e77fb80341fe7130ee7c594256ff08ccc46
 - name: github.com/spf13/pflag
-  version: c7e63cf4530bcd3ba943729cee0efeff2ebea63f
+  version: bf8481a6aebc13a8aab52e699ffe2e79771f5a3f
 - name: github.com/spf13/viper
-  version: 2f6a41490bc86fa9a8fb2fc03526a5795e904a17
-- name: github.com/supershabam/pipeliner
-  version: 23a53341d4d2b71c66b3e01f80d30b5af990b71d
+  version: 44208030b391907a5ec5c5658470bdb6e6169073
+- name: github.com/supershabam/sarama-cg
+  version: 77561f78bb4b3ac5f7d2feba6ce5d870e9a89ade
 - name: github.com/syndtr/goleveldb
-  version: 6ae1797c0b42b9323fc27ff7dcf568df88f2f33d
+  version: 6b4daa5362b502898ddf367c5c11deb9e7a5c727
   subpackages:
   - leveldb
   - leveldb/cache
@@ -229,48 +239,57 @@ imports:
   - curve25519
   - ssh
 - name: golang.org/x/net
-  version: 71a035914f99bb58fe82eac0f1289f10963d876c
+  version: 8b4af36cd21a1f85a7484b49feb7c79363106d8e
   subpackages:
   - context
   - context/ctxhttp
-  - http2
-  - http2/hpack
-  - idna
-  - internal/timeseries
-  - lex/httplex
-  - trace
+- name: golang.org/x/oauth2
+  version: 1e695b1c8febf17aad3bfa7bf0a819ef94b98ad5
+  subpackages:
+  - google
+  - internal
+  - jws
+  - jwt
 - name: golang.org/x/sys
-  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  version: 9bb9f0998d48b31547d975974935ae9b48c7a03c
   subpackages:
   - unix
   - windows
   - windows/registry
   - windows/svc/eventlog
 - name: golang.org/x/text
-  version: 04b8648d973c126ae60143b3e1473bc1576c7597
+  version: c745997bb18563e8788428768ce0f034f2b663df
   subpackages:
   - transform
   - unicode/norm
-- name: google.golang.org/grpc
-  version: 71d2ea4f75286a63b606aca2422cd17ff37fd5b8
+- name: google.golang.org/api
+  version: 45c1c8fbb52e06888fad4b269d9e1c280d638f42
   subpackages:
-  - codes
-  - credentials
-  - grpclog
+  - compute/v1
+  - gensupport
+  - googleapi
+  - googleapi/internal/uritemplates
+- name: google.golang.org/appengine
+  version: 1177123117f15f0e04f58d3623a02e38ece70baa
+  subpackages:
   - internal
-  - metadata
-  - naming
-  - peer
-  - transport
+  - internal/app_identity
+  - internal/base
+  - internal/datastore
+  - internal/log
+  - internal/modules
+  - internal/remote_api
+  - internal/urlfetch
+  - urlfetch
 - name: gopkg.in/fsnotify.v1
-  version: a8a77c9133d2d6fd8334f3260d06f60e8d80a5fb
+  version: 629574ca2a5df945712d3079857300b5e4da0236
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/olivere/elastic.v3
-  version: 0e48129397ff05068bb2909503dd2fef1644c9db
+  version: eaecbad7a83e6b60f131825553e5eb7fd5a50b41
   subpackages:
   - backoff
   - uritemplates
 - name: gopkg.in/yaml.v2
-  version: 31c299268d302dd0aa9a0dcf765a3d58971ac83f
+  version: a5b47d31c556af34a302ce5d659e6fea44d90de0
 testImports: []

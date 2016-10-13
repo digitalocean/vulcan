@@ -868,7 +868,7 @@ func TestForwarderWrite(t *testing.T) {
 		f := NewForwarder(&Config{Writer: mw})
 
 		// Not using any of the returned values currently
-		_, _ = f.Write(context.Background(), test.arg)
+		_ = f.Write(context.Background(), test.arg)
 
 		// wait for write calls to complete
 		f.wg.Done()

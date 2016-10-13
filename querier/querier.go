@@ -15,6 +15,7 @@
 package querier
 
 import (
+	"context"
 	"log"
 	"net/url"
 	"time"
@@ -105,10 +106,16 @@ func (q *Querier) Run() error {
 	prometheus.MustRegister(w)
 	externalURL, _ := url.Parse("http://localhost:9090")
 	tm := &retrieval.TargetManager{}
-	webHandler := web.New(w, queryEngine, tm, ruleManager, &web.PrometheusVersion{}, map[string]string{}, &web.Options{
+	webHandler := web.New(&web.Options{
+		Context:       context.Background(),
+		QueryEngine:   queryEngine,
+		TargetManager: tm,
+		RuleManager:   ruleManager,
+		Version:       &web.PrometheusVersion{},
+		Flags:         map[string]string{},
 		ListenAddress: ":9090",
-		MetricsPath:   "/metrics",
 		ExternalURL:   externalURL,
+		MetricsPath:   "/metrics",
 		RoutePrefix:   "/",
 	})
 	log.Println("running")

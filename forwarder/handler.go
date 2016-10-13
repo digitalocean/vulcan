@@ -29,7 +29,7 @@ import (
 
 // WriterServer handles HTTP write requests from Prometheus.
 type WriterServer interface {
-	Write(context.Context, *remote.WriteRequest) (*remote.WriteResponse, error)
+	Write(context.Context, *remote.WriteRequest) error
 }
 
 type decompressor func(io.Reader) io.Reader
@@ -57,7 +57,7 @@ func WriteHandler(f *Forwarder, compresstionType string) http.Handler {
 			return
 		}
 
-		if _, err := f.Write(context.Background(), &req); err != nil {
+		if err = f.Write(context.Background(), &req); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
