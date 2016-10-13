@@ -42,5 +42,6 @@ const (
 	flagTelemetryPath       = "telemetry-path"
 	flagWebListenAddress    = "web-listen-address"
 	flagKafkaTrackWrites    = "kafka-track-writes"
+	flagCompressedTTL       = "compressed-ttl"
 	flagUncompressedTTL     = "uncompressed-ttl"
 )
