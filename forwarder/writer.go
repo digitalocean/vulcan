@@ -121,7 +121,7 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) error {
 
 	// Batch time series data by instance, fallback on address.
 	for _, ts := range req.Timeseries {
-		key, err := getKey(ts)
+		key, err := GetKey(ts)
 		if err != nil {
 			ll.WithFields(log.Fields{
 				"timeseries": ts,
@@ -159,8 +159,8 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) error {
 	return nil
 }
 
-// getKey formulates the instance key based on Prometheus metric labels.
-func getKey(ts *remote.TimeSeries) (string, error) {
+// GetKey formulates the instance key based on Prometheus metric labels.
+func GetKey(ts *remote.TimeSeries) (string, error) {
 	var (
 		jobName, inst string
 		instFound     bool

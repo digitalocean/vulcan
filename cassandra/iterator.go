@@ -24,7 +24,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at ASC`
+var fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at ASC`
 
 var _ local.SeriesIterator = &SeriesIterator{} // compile-time check that SeriesIterator implements local.SeriesIterator
 

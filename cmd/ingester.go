@@ -58,6 +58,8 @@ func Ingester() *cobra.Command {
 				NumWorkers: viper.GetInt(flagNumCassandraWorkers),
 				Session:    sess,
 				TTL:        viper.GetDuration(flagUncompressedTTL),
+				TableName:  "uncompressed",
+				Keyspace:   viper.GetString(flagCassandraKeyspace),
 			})
 			err = prometheus.Register(w)
 			if err != nil {

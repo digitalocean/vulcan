@@ -118,7 +118,7 @@ func getKeyHappyPath(t *testing.T) {
 	for i, test := range happyPathTests {
 		t.Logf("happy path tests %d: %q", i, test.desc)
 
-		got, err := getKey(test.arg)
+		got, err := GetKey(test.arg)
 		if err != nil {
 			t.Fatalf(
 				"getKey(%v) => error: %v; expected nil errors",
@@ -187,7 +187,7 @@ func getKeyNegative(t *testing.T) {
 	for i, test := range negativeTests {
 		t.Logf("negative test %d: %q", i, test.desc)
 
-		if _, err := getKey(test.arg); err == nil {
+		if _, err := GetKey(test.arg); err == nil {
 			t.Errorf("getKey(%v) => expected an error but got nil", test.arg)
 		}
 	}
