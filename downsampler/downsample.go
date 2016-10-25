@@ -24,6 +24,7 @@ import (
 	"github.com/digitalocean/vulcan/model"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -31,6 +32,8 @@ const (
 	namespace = "vulcan"
 	subsystem = "downsampler"
 )
+
+var _ prometheus.Collector = &Downsampler{}
 
 // Downsampler reads from a kafka topics and records each consumed timeseries
 // at the configured resolution.  First check is applied on an in memory cache;
@@ -50,16 +53,19 @@ type Downsampler struct {
 
 	cleanupF func()
 
-	lastWrite map[string]int64
+	lastWrite map[string]*int64
 
 	done  chan struct{}
-	mutex *sync.Mutex
+	mutex *sync.RWMutex
 	once  *sync.Once
 
-	stateHashLength  prometheus.Gauge
-	stateHashDeletes prometheus.Counter
-	writeCount       prometheus.Counter
-	readCount        *prometheus.CounterVec
+	stateHashLength         prometheus.Gauge
+	stateHashDeletes        prometheus.Counter
+	writeCount              prometheus.Counter
+	readCount               *prometheus.CounterVec
+	memReadDuration         prometheus.Histogram
+	batchProcessDuration    prometheus.Histogram
+	timeseriesCheckDuration prometheus.Histogram
 }
 
 // Config represents the configurable attributes of a Downsampler instance.
@@ -80,10 +86,10 @@ func NewDownsampler(config *Config) *Downsampler {
 		resolution: config.Resolution.Nanoseconds() / int64(time.Millisecond),
 		cleanupF:   config.CleanupFunc,
 
-		lastWrite: map[string]int64{},
+		lastWrite: map[string]*int64{},
 
 		done:  make(chan struct{}),
-		mutex: new(sync.Mutex),
+		mutex: new(sync.RWMutex),
 		once:  new(sync.Once),
 
 		stateHashLength: prometheus.NewGauge(
@@ -119,6 +125,33 @@ func NewDownsampler(config *Config) *Downsampler {
 			},
 			[]string{"type"},
 		),
+		memReadDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "mem_read_duration_seconds",
+				Help:      "Histogram of seconds elapsed to read a state node from memory",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		timeseriesCheckDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "timeseries_check_duration_seconds",
+				Help:      "Histogram of seconds elapsed to validation step of a consumed timeseries",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
+		batchProcessDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "batch_process_duration_seconds",
+				Help:      "Histogram of seconds elapsed to process an entire timeseries batch",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
 	}
 
 	return d
@@ -131,6 +164,9 @@ func (d *Downsampler) Describe(ch chan<- *prometheus.Desc) {
 	d.writeCount.Describe(ch)
 	d.readCount.Describe(ch)
 	d.stateHashDeletes.Describe(ch)
+	d.memReadDuration.Describe(ch)
+	d.batchProcessDuration.Describe(ch)
+	d.timeseriesCheckDuration.Describe(ch)
 }
 
 // Collect implements prometheus.Collector which makes the downsampler
@@ -140,6 +176,9 @@ func (d *Downsampler) Collect(ch chan<- prometheus.Metric) {
 	d.writeCount.Collect(ch)
 	d.readCount.Collect(ch)
 	d.stateHashDeletes.Collect(ch)
+	d.memReadDuration.Collect(ch)
+	d.batchProcessDuration.Collect(ch)
+	d.timeseriesCheckDuration.Collect(ch)
 }
 
 // Run starts the downsampling process.  Exits with error on first encountered
@@ -162,7 +201,7 @@ func (d *Downsampler) Run(numWorkers int) error {
 			defer wg.Done()
 
 			if err := d.work(); err != nil {
-				runErr = err
+				runErr = errors.Wrap(err, "encountered error, quitting")
 				d.Stop()
 			}
 		}()
@@ -179,9 +218,6 @@ func (d *Downsampler) work() error {
 			return nil
 
 		case m := <-d.consumer.Messages():
-			log.WithFields(log.Fields{
-				"tsb": m.TimeSeriesBatch,
-			}).Debug("consumer message received")
 			if err := d.processTSBatch(m.TimeSeriesBatch); err != nil {
 				log.WithFields(log.Fields{
 					"timeseries_batch": m.TimeSeriesBatch,
@@ -196,22 +232,18 @@ func (d *Downsampler) work() error {
 }
 
 func (d *Downsampler) processTSBatch(tsb model.TimeSeriesBatch) error {
-	toWrite := make(model.TimeSeriesBatch, 0)
+	var (
+		toWrite = make(model.TimeSeriesBatch, 0)
+		t0      = time.Now()
+	)
+	defer func() { d.batchProcessDuration.Observe(time.Since(t0).Seconds()) }()
 
 	for _, ts := range tsb {
-		log.WithFields(log.Fields{
-			"timeseries_samples": ts.Samples,
-			"timeseries_fqmn":    ts.ID(),
-		}).Debug("checking if timeseries should be written")
 		should, s, err := d.shouldWrite(ts)
 		if err != nil {
 			return err
 		}
 		if should {
-			log.WithFields(log.Fields{
-				"timeseries_samples": ts.Samples,
-				"timeseries_fqmn":    ts.ID(),
-			}).Debug("timeseries should be written.  Appending to batch write")
 			toWrite = append(toWrite, &model.TimeSeries{
 				Labels:  ts.Labels,
 				Samples: []*model.Sample{s},
@@ -220,15 +252,9 @@ func (d *Downsampler) processTSBatch(tsb model.TimeSeriesBatch) error {
 	}
 
 	if len(toWrite) < 1 {
-		log.WithFields(log.Fields{
-			"to_write": toWrite,
-		}).Debug("nothing to write")
 		return nil
 	}
 
-	log.WithFields(log.Fields{
-		"to_write": toWrite,
-	}).Debug("writing batch to storage")
 	return d.write(toWrite)
 }
 
@@ -238,22 +264,18 @@ func (d *Downsampler) shouldWrite(ts *model.TimeSeries) (bool, *model.Sample, er
 		t    int64
 		err  error
 		fqmn = ts.ID()
+		t0   = time.Now()
 	)
+	defer func() { d.timeseriesCheckDuration.Observe(time.Since(t0).Seconds()) }()
 
-	ll := log.WithFields(log.Fields{
-		"timeseries_samples": ts.Samples,
-		"timeseries_fqmn":    ts.ID(),
-	})
-	t, ok := d.getLastWrite(fqmn)
+	t, ok := d.getLastWriteValue(fqmn)
+	d.memReadDuration.Observe(time.Since(t0).Seconds())
+
 	if !ok {
-		ll.Debug("timeseries not in memory cache, checking from disk")
 		t, err = d.getLastFrDisk(fqmn)
 		if err != nil {
 			return false, nil, err
 		}
-		ll.WithFields(log.Fields{
-			"sample_ts_ms": t,
-		}).Debug("got sample from disk.  Updating memory cache")
 
 		// update state
 		d.updateLastWrite(fqmn, t)
@@ -264,32 +286,24 @@ func (d *Downsampler) shouldWrite(ts *model.TimeSeries) (bool, *model.Sample, er
 	// sample and write latest collected sample.
 	model.SampleSorter(model.SortSampleByTS).Sort(ts.Samples)
 
-	ll.WithFields(log.Fields{
-		"current_time": ts.Samples[0].TimestampMS,
-		"last_time":    t,
-		"resolution":   d.resolution,
-	}).Debug("comparing time")
-	if ts.Samples[0].TimestampMS-t > d.resolution {
-		ll.Debug("time diff is greater than resoution, should write")
+	if ts.Samples[0].TimestampMS-t > d.resolution || t == 0 {
 		// Return the latest collected sample.
 		// Do not update until we know there is a successful write.
 		return true, ts.Samples[len(ts.Samples)-1], nil
 	}
-	ll.Debug("time diff is not greater than resoution, should NOT write")
+
 	return false, nil, nil
 }
 
 func (d *Downsampler) write(tsb model.TimeSeriesBatch) error {
-	d.writeCount.Add(float64(len(tsb)))
+	defer func() {
+		d.writeCount.Add(float64(len(tsb)))
+		d.updateLastWrites(tsb)
+	}()
+
 	if err := d.writer.Write(tsb); err != nil {
 		return err
 	}
-	log.WithFields(log.Fields{
-		"timeseries_batch": tsb,
-	}).Debug("write successful.  updating memory cache")
-	// Update state now that we know writes are successful.
-	d.updateLastWrites(tsb)
-
 	return nil
 }
 
