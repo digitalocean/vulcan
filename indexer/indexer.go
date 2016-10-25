@@ -136,7 +136,7 @@ func (i *Indexer) Run() error {
 	if writeErr != nil {
 		return writeErr
 	}
-	return i.Source.Error()
+	return i.Source.Err()
 }
 
 // IndexSamples indexes a model.TimeSeriesBatch

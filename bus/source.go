@@ -25,10 +25,10 @@ type SourcePayload struct {
 
 // Source is a mechanism for reading from the bus.
 type Source interface {
-	// Error SHOULD ONLY be called AFTER the messages channel has closed.
+	// Err SHOULD ONLY be called AFTER the messages channel has closed.
 	// This lets the caller determine if the messages channel closed because
 	// of an error or completed.
-	Error() error
+	Err() error
 	// Messages returns a readable channel of SourcePayload. The payloads'
 	// Ack function MUST be called after the caller is done processing the
 	// payload. The channel will be closed when the Source encounters an

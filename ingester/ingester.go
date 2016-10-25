@@ -60,7 +60,7 @@ func (i *Ingester) Run() error {
 		return outerErr
 	}
 	// return error that caused Source to stop
-	return i.Source.Error()
+	return i.Source.Err()
 }
 
 func work(done <-chan struct{}, ch <-chan *bus.SourcePayload, w Writer) error {

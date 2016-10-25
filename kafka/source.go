@@ -55,10 +55,10 @@ func NewSource(config *SourceConfig) (*Source, error) {
 	return s, nil
 }
 
-// Error SHOULD ONLY be called AFTER the messages channel has closed.
+// Err SHOULD ONLY be called AFTER the messages channel has closed.
 // This lets the caller determine if the messages channel closed because
 // of an error or completed.
-func (s *Source) Error() error {
+func (s *Source) Err() error {
 	return s.e
 }
 
