@@ -62,6 +62,7 @@ func main() {
 	vulcan.AddCommand(cmd.Ingester())
 	vulcan.AddCommand(cmd.Querier())
 	vulcan.AddCommand(cmd.Forwarder())
+	vulcan.AddCommand(cmd.Compressor())
 
 	vulcan.AddCommand(cmd.Version(&cmd.VersionConfig{
 		GitSummary: gitSummary,

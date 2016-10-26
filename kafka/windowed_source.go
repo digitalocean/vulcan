@@ -7,8 +7,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/bus"
 	cg "github.com/supershabam/sarama-cg"
-	"github.com/supershabam/vulcan/bus"
 )
 
 // WindowedSourceConfig is the details needed to create a connection to Kafka.
@@ -30,6 +30,7 @@ type WindowedSource struct {
 	groupID string
 	m       chan *bus.SourcePayload
 	target  time.Time
+	topics  []string
 }
 
 func NewWindowedSource(config *WindowedSourceConfig) (*WindowedSource, error) {
@@ -48,6 +49,7 @@ func NewWindowedSource(config *WindowedSourceConfig) (*WindowedSource, error) {
 		groupID: config.GroupID,
 		m:       make(chan *bus.SourcePayload),
 		target:  config.Target,
+		topics:  config.Topics,
 	}
 	go ws.run()
 	return ws, nil
@@ -71,7 +73,7 @@ func (ws *WindowedSource) run() {
 		},
 		SessionTimeout: 30 * time.Second,
 		Heartbeat:      3 * time.Second,
-		Topics:         []string{"vulcan"},
+		Topics:         ws.topics,
 		Consume: func(ctx context.Context, topic string, partition int32) {
 			go func() {
 				err := ws.consume(ctx, topic, partition)
@@ -117,13 +119,13 @@ func (ws *WindowedSource) consume(ctx context.Context, topic string, partition i
 				return nil
 			}
 			ack := noop
-			if msg.Timestamp.After(ws.target) {
-				if msg.Offset%1000 == 0 {
-					ack = func() {
-						logrus.WithField("offset", msg.Offset).Info("TODO: actually mark offset")
-					}
-				}
-			}
+			// if msg.Timestamp.After(ws.target) {
+			// 	if msg.Offset%1000 == 0 {
+			// 		ack = func() {
+			// 			logrus.WithField("offset", msg.Offset).Info("TODO: actually mark offset")
+			// 		}
+			// 	}
+			// }
 			tsb, err := parseTimeSeriesBatch(msg.Value)
 			if err != nil {
 				return err
