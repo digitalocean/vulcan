@@ -106,7 +106,7 @@ func (f *Forwarder) Collect(ch chan<- prometheus.Metric) {
 }
 
 // Write implements remote.WriteServer interface.
-func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remote.WriteResponse, error) {
+func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) error {
 	var (
 		toWrite = map[string]*remote.WriteRequest{}
 		ll      = log.WithFields(log.Fields{"source": "forwarder.Write"})
@@ -114,7 +114,7 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 
 	select {
 	case <-f.done:
-		return nil, ErrServiceUnavailable
+		return ErrServiceUnavailable
 
 	default:
 	}
@@ -156,7 +156,7 @@ func (f *Forwarder) Write(ctx context.Context, req *remote.WriteRequest) (*remot
 
 	}
 
-	return &remote.WriteResponse{}, nil
+	return nil
 }
 
 // getKey formulates the instance key based on Prometheus metric labels.
