@@ -1,3 +1,17 @@
+// Copyright 2016 The Vulcan Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package kafka
 
 import (
@@ -32,6 +46,8 @@ type WindowedSource struct {
 	window    time.Duration
 }
 
+// NewWindowedSource creates a bus source that starts at some window delta behind
+// its last known offset.
 func NewWindowedSource(cfg *WindowedSourceConfig) (*WindowedSource, error) {
 	// TODO validate config before writing it into windowed source
 	ctx, cancel := context.WithCancel(cfg.Ctx)
@@ -55,10 +71,14 @@ func NewWindowedSource(cfg *WindowedSourceConfig) (*WindowedSource, error) {
 	return ws, nil
 }
 
+// Err returns an error or nil and should be called after the Messages channel
+// closes.
 func (ws *WindowedSource) Err() error {
 	return ws.err
 }
 
+// Messages returns the channel of bus payloads to read. It will close when the
+// source encounters an error or is finished.
 func (ws *WindowedSource) Messages() <-chan *bus.SourcePayload {
 	return ws.ch
 }
