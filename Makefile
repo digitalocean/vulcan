@@ -73,9 +73,7 @@ glide.lock: glide.yaml
 
 .makecache/vendor: .makecache glide.lock glide.yaml $(VENDOR_SRCS)
 	@echo ">> installing golang dependencies into vendor directory"
-	@glide install
-	@echo ">> removing dependencies' committed vendor directories"
-	@rm -fr vendor/github.com/prometheus/prometheus/vendor
+	@glide install -v
 	@touch $@
 
 target/vulcan_linux_amd64: .makecache/vendor $(VULCAN_SRCS)
