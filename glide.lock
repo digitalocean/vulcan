@@ -1,5 +1,5 @@
 hash: 2397743ddd851a071db86aa2c1c2f0b96802b78821dfec2b3837729e89a66c38
-updated: 2016-10-25T19:33:11.385907781-06:00
+updated: 2016-10-26T19:28:15.903377487-06:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -41,7 +41,7 @@ imports:
   - autorest/to
   - autorest/validation
 - name: github.com/beorn7/perks
-  version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
+  version: b965b613227fddccbfffe13eae360ed3fa822f8d
   subpackages:
   - quantile
 - name: github.com/bsm/sarama-cluster
@@ -117,7 +117,7 @@ imports:
 - name: github.com/magiconair/properties
   version: 0723e352fa358f9322c938cc2dadda874e9151a9
 - name: github.com/matttproud/golang_protobuf_extensions
-  version: c12348ce28de40eed0136aa2b644d0ee0650e56c
+  version: fc2b8d3a73c4867e51861bbdd5ae3c1f0869dd6a
   subpackages:
   - pbutil
 - name: github.com/miekg/dns
@@ -152,7 +152,7 @@ imports:
   - model
   - route
 - name: github.com/prometheus/procfs
-  version: abf152e5f3e97f2fafac028d2cc06c1feb87ffa5
+  version: 6c34ef819e19b4e16f410100ace4aa006f0e3bf8
 - name: github.com/prometheus/prometheus
   version: dd66f2e94b2b662804b9aa1b6a50587b990ba8b7
   subpackages:
