@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/digitalocean/vulcan/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -121,8 +123,8 @@ func (w *Wrapper) NeedsThrottling() bool {
 // QueryRange returns a list of series iterators for the selected
 // time range and label matchers. The iterators need to be closed
 // after usage.
-func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	mets, err := w.MetricsForLabelMatchers(from, through, matchers)
+func (w *Wrapper) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
+	mets, err := w.MetricsForLabelMatchers(ctx, from, through, matchers)
 	if err != nil {
 		return []local.SeriesIterator{}, nil
 	}
@@ -140,8 +142,8 @@ func (w *Wrapper) QueryRange(from, through model.Time, matchers ...*metric.Label
 
 // QueryInstant returns a list of series iterators for the selected
 // instant and label matchers. The iterators need to be closed after usage.
-func (w *Wrapper) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return w.QueryRange(ts.Add(-stalenessDelta), ts.Add(stalenessDelta), matchers...)
+func (w *Wrapper) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
+	return w.QueryRange(ctx, ts.Add(-stalenessDelta), ts.Add(stalenessDelta), matchers...)
 }
 
 // MetricsForLabelMatchers returns the metrics from storage that satisfy
@@ -153,7 +155,7 @@ func (w *Wrapper) QueryInstant(ts model.Time, stalenessDelta time.Duration, matc
 // storage to optimize the search. The storage MAY exclude metrics that
 // have no samples in the specified interval from the returned map. In
 // doubt, specify model.Earliest for from and model.Latest for through.
-func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error) {
+func (w *Wrapper) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error) {
 	result := []metric.Metric{}
 	defer func() {
 		w.matchesFound.Observe(float64(len(result)))
@@ -177,12 +179,12 @@ func (w *Wrapper) MetricsForLabelMatchers(from, through model.Time, matcherSets 
 // the last ingestion is so long ago that the series has been archived),
 // ZeroSample is returned. The label matching behavior is the same as in
 // MetricsForLabelMatchers.
-func (w *Wrapper) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+func (w *Wrapper) LastSampleForLabelMatchers(ctx context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
 	return model.Vector{}, errNotImplemented
 }
 
 // LabelValuesForLabelName gets all of the label values that are associated with a given label name.
-func (w *Wrapper) LabelValuesForLabelName(name model.LabelName) (model.LabelValues, error) {
+func (w *Wrapper) LabelValuesForLabelName(ctx context.Context, name model.LabelName) (model.LabelValues, error) {
 	vals, err := w.r.Values(string(name))
 	if err != nil {
 		return model.LabelValues{}, err

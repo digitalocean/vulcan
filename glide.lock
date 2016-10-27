@@ -1,6 +1,11 @@
-hash: 154ff1cc69f7bef811a0bbb56c78fbb721e88259844d1c6adf5ade8b8606070e
-updated: 2016-09-21T15:09:06.436271319+02:00
+hash: d74dc772cdfe72c3ef716579a3dfcb761ba2bb5b71825d8592f0c564e0b84b00
+updated: 2016-10-25T18:48:13.595582071-06:00
 imports:
+- name: cloud.google.com/go
+  version: 07f82cd40595eddb6b6500701401032dd0bd92e0
+  subpackages:
+  - compute/metadata
+  - internal
 - name: github.com/aws/aws-sdk-go
   version: a11ddd7a070196035bc94b6c04a2a0114c06a395
   subpackages:
@@ -139,7 +144,7 @@ imports:
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 9a94032291f2192936512bab367bc45e77990d6a
+  version: 85637ea67b04b5c3bb25e671dacded2977f8f9f6
   subpackages:
   - expfmt
   - internal/bitbucket.org/ww/goautoneg
@@ -149,7 +154,7 @@ imports:
 - name: github.com/prometheus/procfs
   version: abf152e5f3e97f2fafac028d2cc06c1feb87ffa5
 - name: github.com/prometheus/prometheus
-  version: ac374aa6748e1382dbeb72a00abf47d982ee8fff
+  version: dd66f2e94b2b662804b9aa1b6a50587b990ba8b7
   subpackages:
   - config
   - notifier
@@ -164,6 +169,7 @@ imports:
   - rules
   - storage
   - storage/local
+  - storage/local/chunk
   - storage/local/codable
   - storage/local/index
   - storage/metric
@@ -204,8 +210,6 @@ imports:
   version: c7e63cf4530bcd3ba943729cee0efeff2ebea63f
 - name: github.com/spf13/viper
   version: 2f6a41490bc86fa9a8fb2fc03526a5795e904a17
-- name: github.com/supershabam/pipeliner
-  version: 23a53341d4d2b71c66b3e01f80d30b5af990b71d
 - name: github.com/syndtr/goleveldb
   version: 6ae1797c0b42b9323fc27ff7dcf568df88f2f33d
   subpackages:
@@ -233,12 +237,13 @@ imports:
   subpackages:
   - context
   - context/ctxhttp
-  - http2
-  - http2/hpack
-  - idna
-  - internal/timeseries
-  - lex/httplex
-  - trace
+- name: golang.org/x/oauth2
+  version: 1e695b1c8febf17aad3bfa7bf0a819ef94b98ad5
+  subpackages:
+  - google
+  - internal
+  - jws
+  - jwt
 - name: golang.org/x/sys
   version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
   subpackages:
@@ -251,17 +256,25 @@ imports:
   subpackages:
   - transform
   - unicode/norm
-- name: google.golang.org/grpc
-  version: 71d2ea4f75286a63b606aca2422cd17ff37fd5b8
+- name: google.golang.org/api
+  version: 45c1c8fbb52e06888fad4b269d9e1c280d638f42
   subpackages:
-  - codes
-  - credentials
-  - grpclog
+  - compute/v1
+  - gensupport
+  - googleapi
+  - googleapi/internal/uritemplates
+- name: google.golang.org/appengine
+  version: 1177123117f15f0e04f58d3623a02e38ece70baa
+  subpackages:
   - internal
-  - metadata
-  - naming
-  - peer
-  - transport
+  - internal/app_identity
+  - internal/base
+  - internal/datastore
+  - internal/log
+  - internal/modules
+  - internal/remote_api
+  - internal/urlfetch
+  - urlfetch
 - name: gopkg.in/fsnotify.v1
   version: a8a77c9133d2d6fd8334f3260d06f60e8d80a5fb
 - name: gopkg.in/inf.v0
