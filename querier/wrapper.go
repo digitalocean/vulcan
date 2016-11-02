@@ -200,7 +200,7 @@ func (w *Wrapper) LabelValuesForLabelName(ctx context.Context, name model.LabelN
 
 // DropMetricsForLabelMatchers drops all time series associated with the given label matchers. Returns
 // the number series that were dropped.
-func (w *Wrapper) DropMetricsForLabelMatchers(...*metric.LabelMatcher) (int, error) {
+func (w *Wrapper) DropMetricsForLabelMatchers(ctx context.Context, matches ...*metric.LabelMatcher) (int, error) {
 	return 0, errNotImplemented
 }
 

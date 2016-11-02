@@ -108,6 +108,7 @@ func (q *Querier) Run() error {
 	tm := &retrieval.TargetManager{}
 	webHandler := web.New(&web.Options{
 		Context:       context.Background(),
+		Storage:       w,
 		QueryEngine:   queryEngine,
 		TargetManager: tm,
 		RuleManager:   ruleManager,
