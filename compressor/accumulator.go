@@ -42,7 +42,7 @@ type AccumulatorConfig struct {
 type Accumulator struct {
 	c              chunk.Chunk
 	cfg            *AccumulatorConfig
-	flush          *time.Timer
+	dirty          *time.Timer
 	last           int64
 	first          int64
 	m              sync.Mutex
@@ -59,7 +59,7 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 	a := &Accumulator{
 		c:              c,
 		cfg:            cfg,
-		flush:          time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
+		dirty:          time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
 		maxSampleDelta: cfg.MaxSampleDelta.Nanoseconds() / int64(time.Millisecond),
 	}
 	go a.run()
@@ -70,7 +70,7 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 // samples. If the sample overflows the internal size, then Flush is called and the
 // sample is appended to a new internal data structure.
 func (a *Accumulator) Append(sample model.Sample) error {
-	a.flush.Reset(a.cfg.MaxDirtyDuration)
+	a.dirty.Reset(a.cfg.MaxDirtyDuration)
 	if sample.TimestampMS < a.last {
 		// silently skip appending samples older than our current position.
 		return nil
@@ -82,19 +82,10 @@ func (a *Accumulator) Append(sample model.Sample) error {
 	}
 	// flush if the duration between first sample and this sample exceeds maximum.
 	if sample.TimestampMS-a.first > a.maxSampleDelta {
-		buf := make([]byte, chunk.ChunkLen)
-		err := a.c.MarshalToBuf(buf)
+		err := a.flush()
 		if err != nil {
 			return err
 		}
-		start := int64(a.c.FirstTime())
-		end := a.last
-		a.cfg.Flush(buf, start, end)
-		a.c, err = chunk.NewForEncoding(chunk.Varbit)
-		if err != nil {
-			return err
-		}
-		a.first = 0
 	}
 	chunks, err := a.c.Add(pmodel.SamplePair{
 		Timestamp: pmodel.Time(sample.TimestampMS),
@@ -107,19 +98,10 @@ func (a *Accumulator) Append(sample model.Sample) error {
 	case 1:
 		a.c = chunks[0]
 	case 2:
-		buf := make([]byte, chunk.ChunkLen)
-		err := chunks[0].MarshalToBuf(buf)
+		err := a.flush()
 		if err != nil {
 			return err
 		}
-		start := int64(chunks[0].FirstTime())
-		end := a.last
-		a.cfg.Flush(buf, start, end)
-		a.c, err = chunk.NewForEncoding(chunk.Varbit)
-		if err != nil {
-			return err
-		}
-		a.first = 0
 		iter := chunks[1].NewIterator()
 		for iter.Scan() {
 			chunks, err := a.c.Add(iter.Value())
@@ -138,33 +120,38 @@ func (a *Accumulator) Append(sample model.Sample) error {
 	return nil
 }
 
+// flush expects you to have the mutex lock before calling.
+func (a *Accumulator) flush() error {
+	buf := make([]byte, chunk.ChunkLen)
+	err := a.c.MarshalToBuf(buf)
+	if err != nil {
+		return err
+	}
+	a.cfg.Flush(buf, int64(a.c.FirstTime()), a.last)
+	a.c, err = chunk.NewForEncoding(chunk.Varbit)
+	if err != nil {
+		return err
+	}
+	// reset first to 0, but keep last so we can filter out-of-order appends.
+	a.first = 0
+	return nil
+}
+
 func (a *Accumulator) run() {
 	for {
 		select {
 		case <-a.cfg.Context.Done():
-			a.flush.Stop()
+			a.dirty.Stop()
 			return
-		case <-a.flush.C:
+		case <-a.dirty.C:
 			a.m.Lock()
-			buf := make([]byte, chunk.ChunkLen)
-			err := a.c.MarshalToBuf(buf)
+			err := a.flush()
 			if err != nil {
 				// TODO this case shouldn't happen, but we should have a better error handling story than logging and continuing.
 				logrus.WithError(err).Error("while trying to marshal a chunk to a buffer")
 				a.m.Unlock()
 				continue
 			}
-			start := int64(a.c.FirstTime())
-			end := a.last
-			a.cfg.Flush(buf, start, end)
-			a.c, err = chunk.NewForEncoding(chunk.Varbit)
-			if err != nil {
-				// TODO this case shouldn't happen, but we should have a better error handling story than logging and continuing.
-				logrus.WithError(err).Error("while creating a new Varbit chunk")
-				a.m.Unlock()
-				continue
-			}
-			a.first = 0
 			a.m.Unlock()
 		}
 	}
