@@ -34,6 +34,7 @@ type Config struct {
 	Coordinator      *cg.Coordinator
 	MaxDirtyDuration time.Duration
 	MaxSampleDelta   time.Duration
+	Reader           *cassandra.Reader
 	Window           time.Duration
 	Writer           *cassandra.Writer
 }
@@ -57,13 +58,14 @@ func (c *Compressor) Run() error {
 }
 
 func (c *Compressor) consume(ctx context.Context, topic string, partition int32) {
-	if partition != 0 {
-		return
-	}
 	logrus.WithFields(logrus.Fields{
 		"topic":     topic,
 		"partition": partition,
 	}).Info("consuming")
+	defer logrus.WithFields(logrus.Fields{
+		"topic":     topic,
+		"partition": partition,
+	}).Info("done consuming")
 	for {
 		select {
 		case <-ctx.Done():
@@ -113,8 +115,15 @@ func (c *Compressor) read(consumer cg.Consumer) error {
 				defer wg.Done()
 				m.Lock()
 				if _, ok := accs[id]; !ok {
+					m.Unlock()
+					_, end, err := c.cfg.Reader.LastTimestampMS(id)
+					if err != nil {
+						logrus.WithError(err).Error("handle this better")
+						return
+					}
 					acc, err := NewAccumulator(&AccumulatorConfig{
 						Context: ctx,
+						End:     end,
 						Flush: func(buf []byte, start, end int64) {
 							logrus.WithField("id", id).Info("flushing")
 							err := c.cfg.Writer.WriteCompressed(id, start, end, buf)
@@ -128,11 +137,14 @@ func (c *Compressor) read(consumer cg.Consumer) error {
 						MaxSampleDelta:   c.cfg.MaxSampleDelta,
 					})
 					if err != nil {
-						m.Unlock()
 						logrus.WithError(err).Error("do something better about this")
 						return
 					}
-					accs[id] = acc
+					m.Lock()
+					// double-check there is still no acc set for id.
+					if _, ok = accs[id]; !ok {
+						accs[id] = acc
+					}
 				}
 				acc := accs[id]
 				m.Unlock()

@@ -29,6 +29,7 @@ import (
 // AccumulatorConfig is used to create a new Accumulator.
 type AccumulatorConfig struct {
 	Context          context.Context
+	End              int64
 	Flush            func(buf []byte, start, end int64)
 	MaxSampleDelta   time.Duration
 	MaxDirtyDuration time.Duration
@@ -60,6 +61,7 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 		c:              c,
 		cfg:            cfg,
 		dirty:          time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
+		last:           cfg.End,
 		maxSampleDelta: cfg.MaxSampleDelta.Nanoseconds() / int64(time.Millisecond),
 	}
 	go a.run()

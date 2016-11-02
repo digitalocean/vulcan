@@ -68,6 +68,12 @@ func Compressor() *cobra.Command {
 				TTL:           time.Hour * 5,
 				CompressedTTL: time.Hour * 5,
 			})
+			r, err := cassandra.NewReader(&cassandra.ReaderConfig{
+				Sess: sess,
+			})
+			if err != nil {
+				return err
+			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			coord := cg.NewCoordinator(&cg.CoordinatorConfig{
@@ -89,6 +95,7 @@ func Compressor() *cobra.Command {
 				Coordinator:      coord,
 				MaxDirtyDuration: 3 * time.Hour,
 				MaxSampleDelta:   3 * time.Hour,
+				Reader:           r,
 				Window:           2 * time.Hour,
 				Writer:           w,
 			})
