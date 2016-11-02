@@ -180,6 +180,8 @@ func (w *Writer) write(id string, at int64, value float64) error {
 	return w.s.Query(writeTTLSampleCQL, w.ttlSeconds, value, id, at).Exec()
 }
 
+// WriteCompressed writes a blob to casssandra expecting that it is a varbit encoded metric
+// chunk, but it does not verify correctness.
 func (w *Writer) WriteCompressed(id string, start, end int64, value []byte) error {
 	return w.s.Query(writeTTLCompressedCQL, w.compressedTTLSeconds, value, end, id, start).Exec()
 }
