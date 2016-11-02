@@ -28,7 +28,8 @@ import (
 	cg "github.com/supershabam/sarama-cg"
 )
 
-type CompressorConfig struct {
+// Config is necessary to create a compressor.
+type Config struct {
 	Client           sarama.Client
 	Coordinator      *cg.Coordinator
 	MaxDirtyDuration time.Duration
@@ -37,16 +38,20 @@ type CompressorConfig struct {
 	Writer           *cassandra.Writer
 }
 
+// Compressor reads from kafka and writes to cassandra varbit encoded chunks. It can resume where it
+// left off, load balance between many compressors with minimal disruption when a rebalance happens.
 type Compressor struct {
-	cfg *CompressorConfig
+	cfg *Config
 }
 
-func NewCompressor(cfg *CompressorConfig) (*Compressor, error) {
+// NewCompressor creates a compressor but you must call Run on it to start.
+func NewCompressor(cfg *Config) (*Compressor, error) {
 	return &Compressor{
 		cfg: cfg,
 	}, nil
 }
 
+// Run runs the compressor until completion or an error.
 func (c *Compressor) Run() error {
 	return c.cfg.Coordinator.Run(c.consume)
 }
