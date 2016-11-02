@@ -84,7 +84,7 @@ func Compressor() *cobra.Command {
 				Heartbeat:      3 * time.Second,
 				Topics:         []string{"vulcan"},
 			})
-			c, err := compressor.NewCompressor(&compressor.CompressorConfig{
+			c, err := compressor.NewCompressor(&compressor.Config{
 				Client:           client,
 				Coordinator:      coord,
 				MaxDirtyDuration: 3 * time.Hour,
