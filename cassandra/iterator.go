@@ -19,13 +19,16 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/metric"
 
 	log "github.com/Sirupsen/logrus"
 )
 
 const fetchUncompressedSQLIter = `SELECT at, value FROM uncompressed WHERE fqmn = ? AND at >= ? AND at <= ? ORDER BY at ASC`
+const fetchCompressedSQLIter = `SELECT start, value FROM compressed WHERE fqmn = ? AND start >= ? ORDER BY start ASC`
 
+// TODO do this in a test instead of in-code.
 var _ local.SeriesIterator = &SeriesIterator{} // compile-time check that SeriesIterator implements local.SeriesIterator
 
 // SeriesIterator is a Cassandra-backed implementation of a prometheus SeriesIterator.
@@ -33,6 +36,7 @@ type SeriesIterator struct {
 	iter       *gocql.Iter
 	fqmn       string
 	m          metric.Metric
+	chunkIter  chunk.Iterator
 	curr, last *model.SamplePair
 	list       []model.SamplePair
 	ready      chan struct{}
@@ -70,7 +74,7 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 	// of the prometheus query engine. The si.ready channel signals when the iter is ready
 	// to be used.
 	go func() {
-		si.iter = config.Session.Query(fetchUncompressedSQLIter, si.fqmn, config.After, config.Before).
+		si.iter = config.Session.Query(fetchCompressedSQLIter, si.fqmn, config.After).
 			PageSize(config.PageSize).
 			Prefetch(config.Prefetch).
 			Iter()
@@ -97,12 +101,14 @@ func (si *SeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 		}
 		si.last.Timestamp = si.curr.Timestamp
 		si.last.Value = si.curr.Value
-		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
+		ts, v, ok := si.next()
 		if !ok {
 			// done iterating; set curr to nil to signal no more values on iter.
 			si.curr = nil
 			return *si.last
 		}
+		si.curr.Timestamp = ts
+		si.curr.Value = v
 	}
 }
 
@@ -113,11 +119,13 @@ func (si *SeriesIterator) RangeValues(r metric.Interval) []model.SamplePair {
 	<-si.ready
 	// curr == nil means that there are no more values to iterate over.
 	for si.curr != nil {
-		ok := si.iter.Scan(&si.curr.Timestamp, &si.curr.Value)
+		ts, v, ok := si.next()
 		if !ok {
 			si.curr = nil
 			break
 		}
+		si.curr.Timestamp = ts
+		si.curr.Value = v
 		si.list = append(si.list, model.SamplePair{
 			Timestamp: si.curr.Timestamp,
 			Value:     si.curr.Value,
@@ -159,4 +167,35 @@ func (si *SeriesIterator) Close() {
 		log.WithError(err).WithField("fqmn", si.fqmn).Error("error while closing cassandra SeriesIterator")
 	}
 	return
+}
+
+func (si *SeriesIterator) next() (model.Time, model.SampleValue, bool) {
+Start:
+	if si.chunkIter == nil {
+		var start int64
+		value := make([]byte, chunk.ChunkLen)
+		ok := si.iter.Scan(&start, &value)
+		if !ok {
+			return 0, 0, false
+		}
+		c, err := chunk.NewForEncoding(chunk.Varbit)
+		if err != nil {
+			// TODO handle this better; record locally and expect caller to check for err after iteration stops.
+			log.WithError(err).Error("this shouldn't happen, but it did. handle this better")
+			return 0, 0, false
+		}
+		err = c.UnmarshalFromBuf(value)
+		if err != nil {
+			// TODO handle this better
+			log.WithError(err).Error("this shouldn't happen, but it did. handle this better")
+			return 0, 0, false
+		}
+		si.chunkIter = c.NewIterator()
+	}
+	if !si.chunkIter.Scan() {
+		si.chunkIter = nil
+		goto Start
+	}
+	sp := si.chunkIter.Value()
+	return sp.Timestamp, sp.Value, true
 }

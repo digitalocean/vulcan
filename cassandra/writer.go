@@ -28,7 +28,8 @@ const (
 	namespace = "vulcan"
 	subsystem = "cassandra"
 
-	writeTTLSampleCQL = `UPDATE uncompressed USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
+	writeTTLCompressedCQL = `UPDATE compressed USING TTL ? SET value = ?, end = ? WHERE fqmn = ? AND start = ?`
+	writeTTLSampleCQL     = `UPDATE uncompressed USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
 )
 
 // Writer implements ingester.Writer to persist TimeSeriesBatch samples
@@ -36,9 +37,10 @@ const (
 type Writer struct {
 	prometheus.Collector
 
-	s          *gocql.Session
-	ch         chan *writerPayload
-	ttlSeconds int64
+	s                    *gocql.Session
+	ch                   chan *writerPayload
+	ttlSeconds           int64
+	compressedTTLSeconds int64
 
 	batchWriteDuration  prometheus.Histogram
 	sampleWriteDuration prometheus.Histogram
@@ -69,18 +71,20 @@ type writerPayload struct {
 // TimeSeries to Cassandra. The Session is expected to be already created
 // and ready to use.
 type WriterConfig struct {
-	NumWorkers int
-	Session    *gocql.Session
-	TTL        time.Duration
+	NumWorkers    int
+	Session       *gocql.Session
+	TTL           time.Duration
+	CompressedTTL time.Duration
 }
 
 // NewWriter creates a Writer and starts the configured number of
 // goroutines to write to Cassandra concurrently.
 func NewWriter(config *WriterConfig) *Writer {
 	w := &Writer{
-		s:          config.Session,
-		ch:         make(chan *writerPayload),
-		ttlSeconds: int64(config.TTL.Seconds()),
+		s:                    config.Session,
+		ch:                   make(chan *writerPayload),
+		ttlSeconds:           int64(config.TTL.Seconds()),
+		compressedTTLSeconds: int64(config.CompressedTTL.Seconds()),
 
 		batchWriteDuration: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
@@ -174,4 +178,8 @@ func (w *Writer) write(id string, at int64, value float64) error {
 		w.sampleWriteDuration.Observe(time.Since(t0).Seconds())
 	}()
 	return w.s.Query(writeTTLSampleCQL, w.ttlSeconds, value, id, at).Exec()
+}
+
+func (w *Writer) WriteCompressed(id string, start, end int64, value []byte) error {
+	return w.s.Query(writeTTLCompressedCQL, w.compressedTTLSeconds, value, end, id, start).Exec()
 }
