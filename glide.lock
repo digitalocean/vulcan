@@ -1,5 +1,5 @@
-hash: 2397743ddd851a071db86aa2c1c2f0b96802b78821dfec2b3837729e89a66c38
-updated: 2016-10-26T19:28:15.903377487-06:00
+hash: 542bd3d9d37c7b6857e56bceaf3975ab2d4cf80fce0c10fdf6dc736c6d5bb239
+updated: 2016-11-02T00:11:59.173893708-06:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -63,7 +63,7 @@ imports:
 - name: github.com/fsnotify/fsnotify
   version: f12c6236fe7b5cf6bcf30e5935d08cb079d78334
 - name: github.com/gocql/gocql
-  version: 89e1c0f309816323d37394c9f7a4a918301f609f
+  version: 3a52a1dae458ea8c51f156b4b0e07758cd652b55
   subpackages:
   - internal/lru
   - internal/murmur
@@ -190,7 +190,7 @@ imports:
 - name: github.com/rcrowley/go-metrics
   version: ab2277b1c5d15c3cba104e9cbddbdfc622df5ad8
 - name: github.com/samuel/go-zookeeper
-  version: 87e1bca4477a3cc767ca71be023ced183d74e538
+  version: 1d7be4effb13d2d908342d349d71a284a7542693
   subpackages:
   - zk
 - name: github.com/serialx/hashring
@@ -208,15 +208,15 @@ imports:
 - name: github.com/spf13/cast
   version: 60e7a69a428e9ac1cf7e0c865fc2fe810d34363e
 - name: github.com/spf13/cobra
-  version: 9c28e4bbd74e5c3ed7aacbc552b2cab7cfdfe744
+  version: 6e91dded25d73176bf7f60b40dd7aa1f0bf9be8d
 - name: github.com/spf13/jwalterweatherman
   version: 33c24e77fb80341fe7130ee7c594256ff08ccc46
 - name: github.com/spf13/pflag
-  version: c7e63cf4530bcd3ba943729cee0efeff2ebea63f
+  version: 5ccb023bc27df288a957c5e994cd44fd19619465
 - name: github.com/spf13/viper
-  version: 2f6a41490bc86fa9a8fb2fc03526a5795e904a17
+  version: 651d9d916abc3c3d6a91a12549495caba5edffd2
 - name: github.com/supershabam/sarama-cg
-  version: 77561f78bb4b3ac5f7d2feba6ce5d870e9a89ade
+  version: 328a3b91b06eaa9075a91e7f628e0bd1ae693791
 - name: github.com/syndtr/goleveldb
   version: 6ae1797c0b42b9323fc27ff7dcf568df88f2f33d
   subpackages:
@@ -252,7 +252,7 @@ imports:
   - jws
   - jwt
 - name: golang.org/x/sys
-  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  version: a646d33e2ee3172a661fc09bca23bb4889a41bc8
   subpackages:
   - unix
   - windows

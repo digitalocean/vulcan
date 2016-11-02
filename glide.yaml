@@ -33,3 +33,4 @@ import:
 - package: github.com/bsm/sarama-cluster
   version: v2.1.1
 - package: github.com/supershabam/sarama-cg
+  version: 328a3b91b06eaa9075a91e7f628e0bd1ae693791
