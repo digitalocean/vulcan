@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/digitalocean/vulcan/compressor"
 	"github.com/gocql/gocql"
 	hostpool "github.com/hailocab/go-hostpool"
+	"github.com/prometheus/client_golang/prometheus"
 	cg "github.com/supershabam/sarama-cg"
 
 	"github.com/spf13/cobra"
@@ -102,6 +104,13 @@ func Compressor() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			prometheus.MustRegister(c)
+			go func() {
+				http.Handle("/metrics", prometheus.Handler())
+				http.ListenAndServe(":8080", nil)
+			}()
+
 			return c.Run()
 		},
 	}

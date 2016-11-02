@@ -16,6 +16,7 @@ package compressor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/digitalocean/vulcan/cassandra"
 	"github.com/digitalocean/vulcan/model"
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage/remote"
 	cg "github.com/supershabam/sarama-cg"
 )
@@ -42,14 +44,31 @@ type Config struct {
 // Compressor reads from kafka and writes to cassandra varbit encoded chunks. It can resume where it
 // left off, load balance between many compressors with minimal disruption when a rebalance happens.
 type Compressor struct {
-	cfg *Config
+	cfg           *Config
+	flushDuration *prometheus.SummaryVec
 }
 
 // NewCompressor creates a compressor but you must call Run on it to start.
 func NewCompressor(cfg *Config) (*Compressor, error) {
 	return &Compressor{
 		cfg: cfg,
+		flushDuration: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+			Namespace: "vulcan",
+			Subsystem: "compressor",
+			Name:      "flush_duration",
+			Help:      "summary of flush durations by topic-partition",
+		}, []string{"topic", "partition"}),
 	}, nil
+}
+
+// Describe implements prometheus.Collector.
+func (c *Compressor) Describe(ch chan<- *prometheus.Desc) {
+	c.flushDuration.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (c *Compressor) Collect(ch chan<- prometheus.Metric) {
+	c.flushDuration.Collect(ch)
 }
 
 // Run runs the compressor until completion or an error.
@@ -85,7 +104,7 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 				logrus.WithError(err).Error("exiting consume because of error, though I'm still responsible for this topic-partition")
 				return
 			}
-			err = c.read(twc)
+			err = c.read(twc, topic, partition)
 			if err != nil {
 				// TODO bubble up error
 				logrus.WithError(err).Error("exiting consume because of error, though I'm still responsible for this topic-partition")
@@ -95,7 +114,8 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 	}
 }
 
-func (c *Compressor) read(consumer cg.Consumer) error {
+func (c *Compressor) read(consumer cg.Consumer, topic string, partition int32) error {
+	partitionStr := fmt.Sprintf("%d", partition)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ch := consumer.Consume()
@@ -125,7 +145,10 @@ func (c *Compressor) read(consumer cg.Consumer) error {
 						Context: ctx,
 						End:     end,
 						Flush: func(buf []byte, start, end int64) {
-							logrus.WithField("id", id).Info("flushing")
+							t0 := time.Now()
+							defer func() {
+								c.flushDuration.WithLabelValues(topic, partitionStr).Observe(time.Since(t0).Seconds())
+							}()
 							err := c.cfg.Writer.WriteCompressed(id, start, end, buf)
 							if err != nil {
 								// TODO handle this error better.
