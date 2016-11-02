@@ -241,5 +241,76 @@ func TestAccumulator(t *testing.T) {
 				t.Fatalf("expected flush to be called")
 			}
 		})
+		t.Run("duration", func(t *testing.T) {
+			// this tests that flush is called when samples exceed a duration.
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var counter int64
+			flush := func(buf []byte, start, end int64) {
+				counter++
+			}
+			a, err := compressor.NewAccumulator(&compressor.AccumulatorConfig{
+				Context:          ctx,
+				Flush:            flush,
+				MaxDirtyDuration: time.Hour * 24 * 365,
+				MaxSampleDelta:   time.Second,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			nowMS := time.Now().UnixNano() / int64(time.Millisecond)
+			err = a.Append(model.Sample{
+				TimestampMS: nowMS,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counter != 0 {
+				t.Fatalf("expected counter to be %d but got %d", 0, counter)
+			}
+			err = a.Append(model.Sample{
+				TimestampMS: nowMS + 999,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counter != 0 {
+				t.Fatalf("expected counter to be %d but got %d", 0, counter)
+			}
+			err = a.Append(model.Sample{
+				TimestampMS: nowMS + 1005,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counter != 1 {
+				t.Fatalf("expected counter to be %d but got %d", 1, counter)
+			}
+			// this becomes the first sample and sets the new expiration time.
+			err = a.Append(model.Sample{
+				TimestampMS: nowMS + 3000,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counter != 1 {
+				t.Fatalf("expected counter to be %d but got %d", 1, counter)
+			}
+			err = a.Append(model.Sample{
+				TimestampMS: nowMS + 3999,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if counter != 1 {
+				t.Fatalf("expected counter to be %d but got %d", 2, counter)
+			}
+		})
 	})
 }

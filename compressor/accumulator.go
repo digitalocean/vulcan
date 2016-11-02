@@ -40,11 +40,13 @@ type AccumulatorConfig struct {
 // maximum, or the time elapsed from making the accumulator dirty to now exceeds
 // a provided maximum.
 type Accumulator struct {
-	c     chunk.Chunk
-	cfg   *AccumulatorConfig
-	flush *time.Timer
-	last  int64
-	m     sync.Mutex
+	c              chunk.Chunk
+	cfg            *AccumulatorConfig
+	flush          *time.Timer
+	last           int64
+	first          int64
+	m              sync.Mutex
+	maxSampleDelta int64
 }
 
 // NewAccumulator creates an accumulator that will call Flush when it needs to
@@ -55,9 +57,10 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 		return nil, err
 	}
 	a := &Accumulator{
-		c:     c,
-		cfg:   cfg,
-		flush: time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
+		c:              c,
+		cfg:            cfg,
+		flush:          time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
+		maxSampleDelta: cfg.MaxSampleDelta.Nanoseconds() / int64(time.Millisecond),
 	}
 	go a.run()
 	return a, nil
@@ -74,6 +77,25 @@ func (a *Accumulator) Append(sample model.Sample) error {
 	}
 	a.m.Lock()
 	defer a.m.Unlock()
+	if a.first == 0 {
+		a.first = sample.TimestampMS
+	}
+	// flush if the duration between first sample and this sample exceeds maximum.
+	if sample.TimestampMS-a.first > a.maxSampleDelta {
+		buf := make([]byte, chunk.ChunkLen)
+		err := a.c.MarshalToBuf(buf)
+		if err != nil {
+			return err
+		}
+		start := int64(a.c.FirstTime())
+		end := a.last
+		a.cfg.Flush(buf, start, end)
+		a.c, err = chunk.NewForEncoding(chunk.Varbit)
+		if err != nil {
+			return err
+		}
+		a.first = 0
+	}
 	chunks, err := a.c.Add(pmodel.SamplePair{
 		Timestamp: pmodel.Time(sample.TimestampMS),
 		Value:     pmodel.SampleValue(sample.Value),
@@ -97,6 +119,7 @@ func (a *Accumulator) Append(sample model.Sample) error {
 		if err != nil {
 			return err
 		}
+		a.first = 0
 		iter := chunks[1].NewIterator()
 		for iter.Scan() {
 			chunks, err := a.c.Add(iter.Value())
@@ -141,6 +164,7 @@ func (a *Accumulator) run() {
 				a.m.Unlock()
 				continue
 			}
+			a.first = 0
 			a.m.Unlock()
 		}
 	}
