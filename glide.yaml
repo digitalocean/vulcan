@@ -9,19 +9,17 @@ import:
 - package: github.com/prometheus/common
   version: 85637ea67b04b5c3bb25e671dacded2977f8f9f6
   subpackages:
-  - model  
+  - model
 - package: github.com/Shopify/sarama
-  repo: https://github.com/supershabam/sarama
   version: f672ba54efeac37acc7a48c3c0cc732e402fcf34
+  repo: https://github.com/supershabam/sarama
 - package: github.com/Sirupsen/logrus
   version: v0.10.0
 - package: github.com/gocql/gocql
 - package: github.com/olivere/elastic
   version: v3.0.51
 - package: github.com/prometheus/client_golang
-  version: v0.8.0
-  subpackages:
-  - prometheus
+  version: c5b7fccd204277076155f10851dad72b76a49317
 - package: github.com/samuel/go-zookeeper
   subpackages:
   - zk
@@ -34,3 +32,4 @@ import:
   version: v2.1.1
 - package: github.com/supershabam/sarama-cg
   version: 328a3b91b06eaa9075a91e7f628e0bd1ae693791
+- package: github.com/prometheus/procfs
