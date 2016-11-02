@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cd /go/src/github.com/digitalocean/vulcan
+mkdir -p target
+go build -o target/vulcan_linux_amd64 main.go
