@@ -184,9 +184,23 @@ func TestAccumulator(t *testing.T) {
 			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			done := make(chan struct{})
+			var counter int64
+			done1 := make(chan struct{})
+			done2 := make(chan struct{})
 			flush := func(buf []byte, start, end int64) {
-				close(done)
+				counter++
+				if counter == 1 {
+					close(done1)
+					if start != 24 {
+						t.Errorf("expected start to be %d but got %d", 24, start)
+					}
+				}
+				if counter == 2 {
+					close(done2)
+					if start != 42 {
+						t.Errorf("expected start to be %d but got %d", 42, start)
+					}
+				}
 			}
 			a, err := compressor.NewAccumulator(&compressor.AccumulatorConfig{
 				Context:          ctx,
@@ -205,7 +219,24 @@ func TestAccumulator(t *testing.T) {
 				t.Fatal(err)
 			}
 			select {
-			case <-done:
+			case <-done1:
+			case <-time.After(time.Millisecond * 20):
+				t.Fatalf("expected flush to be called")
+			}
+			// we don't want the accumulator to be constantly flushing
+			time.Sleep(time.Millisecond * 20)
+			if counter != 1 {
+				t.Fatalf("expected counter to be %d but was %d", 1, counter)
+			}
+			err = a.Append(model.Sample{
+				TimestampMS: 42,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done2:
 			case <-time.After(time.Millisecond * 20):
 				t.Fatalf("expected flush to be called")
 			}
