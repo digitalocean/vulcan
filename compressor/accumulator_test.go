@@ -1,3 +1,17 @@
+// Copyright 2016 The Vulcan Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package compressor_test
 
 import (
@@ -68,11 +82,13 @@ func TestAccumulator(t *testing.T) {
 	}
 	t.Run("acc", func(t *testing.T) {
 		t.Run("equals", func(t *testing.T) {
+			t.Parallel()
 			if !chunkEquals(full1, full1) {
 				t.Fatalf("expected full to eq full")
 			}
 		})
 		t.Run("size", func(t *testing.T) {
+			t.Parallel()
 			// this tests that the accumulator calls flush after a max internal size is reached.
 			full1 := full1.Clone()
 			full2 := full2.Clone()
@@ -161,6 +177,37 @@ func TestAccumulator(t *testing.T) {
 			}
 			if counter != 2 {
 				t.Fatalf("expected counter to be %d but got %d", 1, counter)
+			}
+		})
+		t.Run("dirty", func(t *testing.T) {
+			// this tests that flush is called after an elapsed time after writing a sample.
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			flush := func(buf []byte, start, end int64) {
+				close(done)
+			}
+			a, err := compressor.NewAccumulator(&compressor.AccumulatorConfig{
+				Context:          ctx,
+				Flush:            flush,
+				MaxDirtyDuration: time.Millisecond,
+				MaxSampleDelta:   time.Hour * 24 * 365,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = a.Append(model.Sample{
+				TimestampMS: 24,
+				Value:       42.0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Millisecond * 20):
+				t.Fatalf("expected flush to be called")
 			}
 		})
 	})
