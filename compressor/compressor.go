@@ -93,8 +93,9 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 			timer.Stop()
 			return
 		case <-timer.C:
-			count++
 			log.Info("consuming")
+			count++
+			delay = delay + time.Millisecond*100*time.Duration(math.Pow(float64(2), float64(count)))
 			twc, err := cg.NewTimeWindowConsumer(&cg.TimeWindowConsumerConfig{
 				CacheDuration: time.Minute,
 				Client:        c.cfg.Client,
@@ -105,15 +106,18 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 				Window:        c.cfg.Window,
 			})
 			if err != nil {
+				timer.Reset(delay)
 				log.WithError(err).Error("error while consuming")
+				log.WithField("delay", delay).Info("restarting consumer after delay")
 				continue
 			}
 			err = c.read(twc, topic, partition)
 			if err != nil {
+				timer.Reset(delay)
 				log.WithError(err).Error("error while processing consumer")
+				log.WithField("delay", delay).Info("restarting consumer after delay")
 				continue
 			}
-			delay = delay + time.Millisecond*100*time.Duration(math.Pow(float64(2), float64(count)))
 			log.WithField("delay", delay).Info("restarting consumer after delay")
 			timer.Reset(delay)
 		}
