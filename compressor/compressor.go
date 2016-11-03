@@ -107,7 +107,7 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 			})
 			if err != nil {
 				timer.Reset(delay)
-				log.WithError(err).Error("error while consuming")
+				log.WithError(err).Error("error creating consumer")
 				log.WithField("delay", delay).Info("restarting consumer after delay")
 				continue
 			}
