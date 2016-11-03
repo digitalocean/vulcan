@@ -106,12 +106,12 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 			})
 			if err != nil {
 				log.WithError(err).Error("error while consuming")
-				return
+				continue
 			}
 			err = c.read(twc, topic, partition)
 			if err != nil {
 				log.WithError(err).Error("error while processing consumer")
-				return
+				continue
 			}
 			delay = delay + time.Millisecond*100*time.Duration(math.Pow(float64(2), float64(count)))
 			log.WithField("delay", delay).Info("restarting consumer after delay")
