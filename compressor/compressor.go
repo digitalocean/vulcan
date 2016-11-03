@@ -17,6 +17,7 @@ package compressor
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -77,19 +78,23 @@ func (c *Compressor) Run() error {
 }
 
 func (c *Compressor) consume(ctx context.Context, topic string, partition int32) {
-	logrus.WithFields(logrus.Fields{
+	log := logrus.WithFields(logrus.Fields{
 		"topic":     topic,
 		"partition": partition,
-	}).Info("consuming")
-	defer logrus.WithFields(logrus.Fields{
-		"topic":     topic,
-		"partition": partition,
-	}).Info("done consuming")
+	})
+	defer log.Info("done consuming")
+	// delay will act as our slowdown mechanism
+	count := 0
+	delay := time.Duration(0)
+	timer := time.NewTimer(delay)
 	for {
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		default:
+		case <-timer.C:
+			count++
+			log.Info("consuming")
 			twc, err := cg.NewTimeWindowConsumer(&cg.TimeWindowConsumerConfig{
 				CacheDuration: time.Minute,
 				Client:        c.cfg.Client,
@@ -100,16 +105,17 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 				Window:        c.cfg.Window,
 			})
 			if err != nil {
-				// TODO bubble up error
-				logrus.WithError(err).Error("exiting consume because of error, though I'm still responsible for this topic-partition")
+				log.WithError(err).Error("error while consuming")
 				return
 			}
 			err = c.read(twc, topic, partition)
 			if err != nil {
-				// TODO bubble up error
-				logrus.WithError(err).Error("exiting consume because of error, though I'm still responsible for this topic-partition")
+				log.WithError(err).Error("error while processing consumer")
 				return
 			}
+			delay = delay + time.Millisecond*100*time.Duration(math.Pow(float64(2), float64(count)))
+			log.WithField("delay", delay).Info("restarting consumer after delay")
+			timer.Reset(delay)
 		}
 	}
 }
