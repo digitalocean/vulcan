@@ -165,15 +165,19 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 				c.samplesTotal.WithLabelValues(topic, partitionStr).Inc()
 			}
 		}
+		err = twc.CommitOffset(msg.Offset)
+		if err != nil {
+			return err
+		}
 	}
 	return twc.Err()
 }
 
 func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
-	// silently only handle partition 0,1,2
-	if partition < 3 {
-		return
-	}
+	logrus.WithFields(logrus.Fields{
+		"topic":     topic,
+		"partition": partition,
+	}).Info("taking control of topic-partition")
 	count := 0
 	backoff := time.NewTimer(time.Duration(0))
 	for {
@@ -187,7 +191,7 @@ func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
 				logrus.WithFields(logrus.Fields{
 					"topic":     topic,
 					"partition": partition,
-				}).Info("done consuming")
+				}).Info("relenquishing control of topic-partition")
 				return
 			}
 			// exponential backoff with cap at 10m
