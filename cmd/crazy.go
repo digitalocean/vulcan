@@ -42,11 +42,20 @@ func Crazy() *cobra.Command {
 		Use:   "crazy",
 		Short: "crazy is an in-memory ttl-ed compressed metric database",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
+			clientID := viper.GetString(flagKafkaClientID)
+			groupID := viper.GetString(flagKafkaGroupID)
+
+			logrus.WithFields(logrus.Fields{
+				"kafka_addrs":     kafkaAddrs,
+				"kafka_client_id": clientID,
+				"kafka_group_id":  groupID,
+			}).Info("starting crazy")
+
 			cfg := sarama.NewConfig()
 			cfg.Version = sarama.V0_10_0_0
-			cfg.ClientID = viper.GetString(flagKafkaClientID)
-			addrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
-			client, err := sarama.NewClient(addrs, cfg)
+			cfg.ClientID = clientID
+			client, err := sarama.NewClient(kafkaAddrs, cfg)
 			if err != nil {
 				return err
 			}
@@ -55,6 +64,7 @@ func Crazy() *cobra.Command {
 			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 			go func() {
 				<-term
+				logrus.Info("shutting down...")
 				cancel()
 				<-term
 				os.Exit(1)
@@ -62,7 +72,7 @@ func Crazy() *cobra.Command {
 			coord := cg.NewCoordinator(&cg.CoordinatorConfig{
 				Client:  client,
 				Context: ctx,
-				GroupID: viper.GetString(flagKafkaGroupID),
+				GroupID: groupID,
 				Protocols: []cg.ProtocolKey{
 					{
 						Protocol: &cg.HashRing{},
