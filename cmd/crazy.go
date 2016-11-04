@@ -96,9 +96,9 @@ func Crazy() *cobra.Command {
 				http.Handle("/metrics", prometheus.Handler())
 				http.HandleFunc("/chunks", func(w http.ResponseWriter, r *http.Request) {
 					id := r.URL.Query().Get("id")
-					ok, chunks := c.ChunksAfter(id, time.Now().Add(-time.Hour*24*365).UnixNano()/int64(time.Millisecond))
-					if !ok {
-						fmt.Fprintf(w, "id not found")
+					chunks, err := c.ChunksAfter(id, time.Now().Add(-time.Hour*24*365).UnixNano()/int64(time.Millisecond))
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
 						return
 					}
 					w.Header().Add("Content-Type", "text/plain")

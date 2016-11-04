@@ -16,6 +16,7 @@ package crazy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -38,11 +39,17 @@ type Config struct {
 	MaxAge      time.Duration
 }
 
+type consumer struct {
+	Accs map[string]*Accumulator
+	M    sync.RWMutex
+}
+
 // Crazy is an idea to run an in-memory kafka consumer of varbit compressed metrics
 // and expose that data to the querier.
 type Crazy struct {
-	accs         map[string]*Accumulator
+	// accs         map[string]*Accumulator
 	cfg          *Config
+	consumers    map[string]*consumer
 	m            sync.RWMutex
 	samplesTotal *prometheus.CounterVec
 }
@@ -50,8 +57,9 @@ type Crazy struct {
 // NewCrazy creates a new crazy, but does not start it.
 func NewCrazy(cfg *Config) (*Crazy, error) {
 	return &Crazy{
-		accs: map[string]*Accumulator{},
-		cfg:  cfg,
+		// accs: map[string]*Accumulator{},
+		cfg:       cfg,
+		consumers: map[string]*consumer{},
 		samplesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "vulcan",
 			Subsystem: "crazy",
@@ -72,16 +80,44 @@ func (c *Crazy) Collect(ch chan<- prometheus.Metric) {
 }
 
 // ChunksAfter returns the chunks for the given id that occur after the provided unix timestamp in ms.
-func (c *Crazy) ChunksAfter(id string, after int64) (bool, []chunk.Chunk) {
-	c.m.RLock()
-	defer c.m.RUnlock()
-	if acc, ok := c.accs[id]; ok {
-		return true, acc.ChunksAfter(after)
+func (c *Crazy) ChunksAfter(id string, after int64) ([]chunk.Chunk, error) {
+	var fqmn map[string]string
+	err := json.Unmarshal([]byte(id), &fqmn)
+	if err != nil {
+		return nil, err
 	}
-	return false, []chunk.Chunk{}
+	// TODO implement kafka producer hashing function.
+	hash := "1234"
+	var partition int32
+	var topic string
+	if hash == "1234" {
+		partition = 4
+		topic = "vulcan"
+	}
+	consumerKey := fmt.Sprintf("%s-%d", topic, partition)
+	c.m.RLock()
+	cons, ok := c.consumers[consumerKey]
+	c.m.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	cons.M.RLock()
+	acc, ok := cons.Accs[id]
+	cons.M.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	return acc.ChunksAfter(after), nil
 }
 
 func (c *Crazy) consume(ctx context.Context, topic string, partition int32) error {
+	cons := &consumer{
+		Accs: map[string]*Accumulator{},
+	}
+	consumerKey := fmt.Sprintf("%s-%d", topic, partition)
+	c.m.Lock()
+	c.consumers[consumerKey] = cons
+	c.m.Unlock()
 	partitionStr := fmt.Sprintf("%d", partition)
 	twc, err := cg.NewTimeWindowConsumer(&cg.TimeWindowConsumerConfig{
 		CacheDuration: time.Minute,
@@ -105,23 +141,23 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 			case <-gc.C:
 				cutoff := time.Now().Add(-c.cfg.MaxAge).UnixNano() / int64(time.Millisecond)
 				oldids := make([]string, 0, 1000)
-				c.m.RLock()
-				for id, acc := range c.accs {
+				cons.M.RLock()
+				for id, acc := range cons.Accs {
 					if acc.Last() < cutoff {
 						oldids = append(oldids, id)
 					}
 				}
-				c.m.RUnlock()
+				cons.M.RUnlock()
 				if len(oldids) == 0 {
 					continue
 				}
-				c.m.Lock()
+				cons.M.Lock()
 				for _, id := range oldids {
-					if acc, ok := c.accs[id]; ok && acc.Last() < cutoff {
-						delete(c.accs, id)
+					if acc, ok := cons.Accs[id]; ok && acc.Last() < cutoff {
+						delete(cons.Accs, id)
 					}
 				}
-				c.m.Unlock()
+				cons.M.Unlock()
 			}
 		}
 	}()
@@ -136,9 +172,9 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 				logrus.WithField("offset", msg.Offset).WithField("id", id).Info("tracing ingested id")
 			}
 			// attempt to get existing accumulator with just read lock.
-			c.m.RLock()
-			acc, ok := c.accs[id]
-			c.m.RUnlock()
+			cons.M.RLock()
+			acc, ok := cons.Accs[id]
+			cons.M.RUnlock()
 			if !ok {
 				// create an accumulator and try to set it.
 				myacc, err := NewAccumulator(&AccumulatorConfig{
@@ -147,15 +183,15 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 				if err != nil {
 					return err
 				}
-				c.m.Lock()
-				racc, ok := c.accs[id]
+				cons.M.Lock()
+				racc, ok := cons.Accs[id]
 				if !ok {
-					c.accs[id] = myacc
+					cons.Accs[id] = myacc
 					acc = myacc
 				} else {
 					acc = racc
 				}
-				c.m.Unlock()
+				cons.M.Unlock()
 			}
 			for _, s := range ts.Samples {
 				err := acc.Append(s)
