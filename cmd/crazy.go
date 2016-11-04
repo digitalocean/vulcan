@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,6 +28,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/digitalocean/vulcan/crazy"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	cg "github.com/supershabam/sarama-cg"
@@ -82,6 +84,22 @@ func Crazy() *cobra.Command {
 			prometheus.MustRegister(c)
 			go func() {
 				http.Handle("/metrics", prometheus.Handler())
+				http.HandleFunc("/chunks", func(w http.ResponseWriter, r *http.Request) {
+					id := r.URL.Query().Get("id")
+					ok, chunks := c.ChunksAfter(id, time.Now().Add(-time.Hour*24*365).UnixNano()/int64(time.Millisecond))
+					if !ok {
+						fmt.Fprintf(w, "id not found")
+						return
+					}
+					w.Header().Add("Content-Type", "text/plain")
+					fmt.Fprintf(w, "found n=%d chunks\n", len(chunks))
+					buf := make([]byte, chunk.ChunkLen)
+					for _, chnk := range chunks {
+						chnk.MarshalToBuf(buf)
+						fmt.Fprintf(w, "%x\n\n", buf)
+					}
+					return
+				})
 				http.ListenAndServe(":8080", nil)
 			}()
 			logrus.Info("running")

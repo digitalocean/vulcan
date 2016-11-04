@@ -26,6 +26,7 @@ import (
 	"github.com/digitalocean/vulcan/model"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/remote"
 	cg "github.com/supershabam/sarama-cg"
 )
@@ -68,6 +69,16 @@ func (c *Crazy) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (c *Crazy) Collect(ch chan<- prometheus.Metric) {
 	c.samplesTotal.Collect(ch)
+}
+
+// ChunksAfter returns the chunks for the given id that occur after the provided unix timestamp in ms.
+func (c *Crazy) ChunksAfter(id string, after int64) (bool, []chunk.Chunk) {
+	c.m.RLock()
+	defer c.m.RUnlock()
+	if acc, ok := c.accs[id]; ok {
+		return true, acc.ChunksAfter(after)
+	}
+	return false, []chunk.Chunk{}
 }
 
 func (c *Crazy) consume(ctx context.Context, topic string, partition int32) error {
@@ -114,13 +125,18 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 			}
 		}
 	}()
+	counter := 0
 	for msg := range twc.Consume() {
+		counter++
 		tsb, err := parseTimeSeriesBatch(msg.Value)
 		if err != nil {
 			return err
 		}
 		for _, ts := range tsb {
 			id := ts.ID()
+			if counter%100000 == 1 {
+				logrus.WithField("id", id).Info("tracing ingested id")
+			}
 			// attempt to get existing accumulator with just read lock.
 			c.m.RLock()
 			acc, ok := c.accs[id]
