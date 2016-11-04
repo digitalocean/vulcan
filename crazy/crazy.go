@@ -125,17 +125,15 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 			}
 		}
 	}()
-	counter := 0
 	for msg := range twc.Consume() {
-		counter++
 		tsb, err := parseTimeSeriesBatch(msg.Value)
 		if err != nil {
 			return err
 		}
-		for _, ts := range tsb {
+		for i, ts := range tsb {
 			id := ts.ID()
-			if counter%100000 == 1 {
-				logrus.WithField("id", id).Info("tracing ingested id")
+			if i == 0 && msg.Offset%10000 == 0 {
+				logrus.WithField("offset", msg.Offset).WithField("id", id).Info("tracing ingested id")
 			}
 			// attempt to get existing accumulator with just read lock.
 			c.m.RLock()
@@ -186,6 +184,10 @@ func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
 		case <-backoff.C:
 			err := c.consume(ctx, topic, partition)
 			if err == nil {
+				logrus.WithFields(logrus.Fields{
+					"topic":     topic,
+					"partition": partition,
+				}).Info("done consuming")
 				return
 			}
 			// exponential backoff with cap at 10m
