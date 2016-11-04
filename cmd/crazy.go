@@ -86,7 +86,7 @@ func Crazy() *cobra.Command {
 			c, err := crazy.NewCrazy(&crazy.Config{
 				Client:      client,
 				Coordinator: coord,
-				MaxAge:      time.Hour * 2,
+				MaxAge:      time.Hour * 4,
 			})
 			if err != nil {
 				return err

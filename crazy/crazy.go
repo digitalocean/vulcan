@@ -170,8 +170,8 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 }
 
 func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
-	// silently only handle partition 0
-	if partition != 0 {
+	// silently only handle partition 0,1,2
+	if partition < 3 {
 		return
 	}
 	count := 0
