@@ -15,7 +15,6 @@
 package crazy
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -26,8 +25,7 @@ import (
 
 // AccumulatorConfig is used to create a new Accumulator.
 type AccumulatorConfig struct {
-	Context context.Context
-	MaxAge  time.Duration
+	MaxAge time.Duration
 }
 
 type chunkend struct {
@@ -42,10 +40,8 @@ type chunkend struct {
 // a provided maximum.
 type Accumulator struct {
 	chunks []*chunkend
-	cfg    *AccumulatorConfig
-	done   chan struct{}
-	idle   *time.Timer
-	m      sync.RWMutex
+	m      sync.Mutex
+	maxAge int64
 }
 
 // NewAccumulator creates an accumulator that will call Flush when it needs to
@@ -62,17 +58,13 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 				End:   0,
 			},
 		},
-		cfg:  cfg,
-		done: make(chan struct{}),
-		idle: time.NewTimer(time.Hour * 24 * 365 * 20), // start the timer to trigger 20 years in the future...
+		maxAge: cfg.MaxAge.Nanoseconds() / int64(time.Millisecond),
 	}
-	go a.run()
 	return a, nil
 }
 
 // Append appends a sample to the accumulator. If this causes
-func (a *Accumulator) Append(sample model.Sample) error {
-	a.idle.Reset(a.cfg.MaxAge)
+func (a *Accumulator) Append(sample *model.Sample) error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if sample.TimestampMS < a.chunks[0].End {
@@ -119,7 +111,7 @@ func (a *Accumulator) Append(sample model.Sample) error {
 		panic("appending a sample to a chunk without error should always result in 1 or 2 elements in chunk slice")
 	}
 	// remove expired chunks
-	cutoff := sample.TimestampMS - (a.cfg.MaxAge.Nanoseconds() / int64(time.Millisecond))
+	cutoff := sample.TimestampMS - a.maxAge
 	for len(a.chunks) > 0 {
 		end := a.chunks[len(a.chunks)-1].End
 		if end == 0 || end >= cutoff {
@@ -134,8 +126,8 @@ func (a *Accumulator) Append(sample model.Sample) error {
 // at least one value after the provided time. The result may be a length zero slice.
 func (a *Accumulator) ChunksAfter(after int64) []chunk.Chunk {
 	chunks := make([]chunk.Chunk, 0)
-	a.m.RLock()
-	defer a.m.RUnlock()
+	a.m.Lock()
+	defer a.m.Unlock()
 	for i := len(a.chunks) - 1; i >= 0; i-- {
 		if a.chunks[i].End > after {
 			chunks = append(chunks, a.chunks[i].Chunk.Clone())
@@ -144,17 +136,7 @@ func (a *Accumulator) ChunksAfter(after int64) []chunk.Chunk {
 	return chunks
 }
 
-// Done returns a channel that is closed then the Accumulator shuts down either
-// because it's own context closed, or it was idle for too long.
-func (a *Accumulator) Done() <-chan struct{} {
-	return a.done
-}
-
-func (a *Accumulator) run() {
-	select {
-	case <-a.cfg.Context.Done():
-	case <-a.idle.C:
-	}
-	close(a.done)
-	a.idle.Stop()
+// Last returns the last appended timestamp in ms.
+func (a *Accumulator) Last() int64 {
+	return a.chunks[0].End
 }

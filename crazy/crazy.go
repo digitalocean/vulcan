@@ -16,34 +16,62 @@ package crazy
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/model"
+	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/storage/remote"
 	cg "github.com/supershabam/sarama-cg"
 )
 
+// Config starts up your crazy face.
 type Config struct {
 	Client      sarama.Client
 	Coordinator *cg.Coordinator
 	MaxAge      time.Duration
 }
 
+// Crazy is an idea to run an in-memory kafka consumer of varbit compressed metrics
+// and expose that data to the querier.
 type Crazy struct {
-	cfg  *Config
-	done chan struct{}
-	err  error
+	accs         map[string]*Accumulator
+	cfg          *Config
+	m            sync.RWMutex
+	samplesTotal *prometheus.CounterVec
 }
 
+// NewCrazy creates a new crazy, but does not start it.
 func NewCrazy(cfg *Config) (*Crazy, error) {
 	return &Crazy{
+		accs: map[string]*Accumulator{},
 		cfg:  cfg,
-		done: make(chan struct{}),
+		samplesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "vulcan",
+			Subsystem: "crazy",
+			Name:      "samples_total",
+			Help:      "count of samples ingested into crazy",
+		}, []string{"topic", "partition"}),
 	}, nil
 }
 
+// Describe implements prometheus.Collector.
+func (c *Crazy) Describe(ch chan<- *prometheus.Desc) {
+	c.samplesTotal.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (c *Crazy) Collect(ch chan<- prometheus.Metric) {
+	c.samplesTotal.Collect(ch)
+}
+
 func (c *Crazy) consume(ctx context.Context, topic string, partition int32) error {
+	partitionStr := fmt.Sprintf("%d", partition)
 	twc, err := cg.NewTimeWindowConsumer(&cg.TimeWindowConsumerConfig{
 		CacheDuration: time.Minute,
 		Client:        c.cfg.Client,
@@ -57,12 +85,61 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 		return err
 	}
 	for msg := range twc.Consume() {
-
+		tsb, err := parseTimeSeriesBatch(msg.Value)
+		if err != nil {
+			return err
+		}
+		for _, ts := range tsb {
+			id := ts.ID()
+			// attempt to get existing accumulator with just read lock.
+			c.m.RLock()
+			acc, ok := c.accs[id]
+			c.m.RUnlock()
+			if !ok {
+				// create an accumulator and try to set it.
+				myacc, err := NewAccumulator(&AccumulatorConfig{
+					MaxAge: c.cfg.MaxAge,
+				})
+				if err != nil {
+					return err
+				}
+				// clean up this new accumulator when it is done.
+				// go func(id string) {
+				// 	c.m.Lock()
+				// 	acc := c.accs[id]
+				// 	if acc == myacc {
+				// 		delete(c.accs, id)
+				// 	}
+				// 	c.m.Unlock()
+				// }(id)
+				// now with full lock, double-check there isn't an existing accumulator.
+				c.m.Lock()
+				racc, ok := c.accs[id]
+				if !ok {
+					c.accs[id] = myacc
+					acc = myacc
+				} else {
+					acc = racc
+				}
+				c.m.Unlock()
+			}
+			for _, s := range ts.Samples {
+				err := acc.Append(s)
+				if err != nil {
+					return err
+				}
+				c.samplesTotal.WithLabelValues(topic, partitionStr).Inc()
+			}
+		}
 	}
 	return twc.Err()
 }
 
 func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
+	// silently only handle partition 0
+	if partition != 0 {
+		return
+	}
 	count := 0
 	backoff := time.NewTimer(time.Duration(0))
 	for {
@@ -87,10 +164,32 @@ func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
 	}
 }
 
-func (c *Crazy) run() {
-	err := c.cfg.Coordinator.Run(c.handle)
-	if err != nil {
-		c.err = err
+// Run blocks until crazy is done or errors.
+func (c *Crazy) Run() error {
+	return c.cfg.Coordinator.Run(c.handle)
+}
+
+func parseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
+	wr := &remote.WriteRequest{}
+	if err := proto.Unmarshal(in, wr); err != nil {
+		return nil, err
 	}
-	close(c.done)
+	tsb := make(model.TimeSeriesBatch, 0, len(wr.Timeseries))
+	for _, protots := range wr.Timeseries {
+		ts := &model.TimeSeries{
+			Labels:  map[string]string{},
+			Samples: make([]*model.Sample, 0, len(protots.Samples)),
+		}
+		for _, pair := range protots.Labels {
+			ts.Labels[pair.Name] = pair.Value
+		}
+		for _, protosamp := range protots.Samples {
+			ts.Samples = append(ts.Samples, &model.Sample{
+				TimestampMS: protosamp.TimestampMs,
+				Value:       protosamp.Value,
+			})
+		}
+		tsb = append(tsb, ts)
+	}
+	return tsb, nil
 }

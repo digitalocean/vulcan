@@ -15,7 +15,6 @@
 package crazy_test
 
 import (
-	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -92,10 +91,8 @@ func TestAccumulator(t *testing.T) {
 			// this tests that the accumulator calls flush after a max internal size is reached.
 			full1 := full1.Clone()
 			full2 := full2.Clone()
-			ctx := context.Background()
 			a, err := crazy.NewAccumulator(&crazy.AccumulatorConfig{
-				Context: ctx,
-				MaxAge:  time.Hour * 24 * 365,
+				MaxAge: time.Hour * 24 * 365,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +108,7 @@ func TestAccumulator(t *testing.T) {
 					TimestampMS: int64(v.Timestamp),
 					Value:       float64(v.Value),
 				}
-				err = a.Append(s)
+				err = a.Append(&s)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -127,7 +124,7 @@ func TestAccumulator(t *testing.T) {
 					TimestampMS: int64(v.Timestamp),
 					Value:       float64(v.Value),
 				}
-				err = a.Append(s)
+				err = a.Append(&s)
 				if err != nil {
 					t.Fatal(err)
 				}

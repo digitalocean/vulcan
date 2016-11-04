@@ -16,10 +16,17 @@ package cmd
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/crazy"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	cg "github.com/supershabam/sarama-cg"
@@ -42,7 +49,14 @@ func Crazy() *cobra.Command {
 				return err
 			}
 			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			term := make(chan os.Signal, 1)
+			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
+			go func() {
+				<-term
+				cancel()
+				<-term
+				os.Exit(1)
+			}()
 			coord := cg.NewCoordinator(&cg.CoordinatorConfig{
 				Client:  client,
 				Context: ctx,
@@ -57,7 +71,21 @@ func Crazy() *cobra.Command {
 				Heartbeat:      3 * time.Second,
 				Topics:         []string{"vulcan"},
 			})
-			return nil
+			c, err := crazy.NewCrazy(&crazy.Config{
+				Client:      client,
+				Coordinator: coord,
+				MaxAge:      time.Hour * 2,
+			})
+			if err != nil {
+				return err
+			}
+			prometheus.MustRegister(c)
+			go func() {
+				http.Handle("/metrics", prometheus.Handler())
+				http.ListenAndServe(":8080", nil)
+			}()
+			logrus.Info("running")
+			return c.Run()
 		},
 	}
 
