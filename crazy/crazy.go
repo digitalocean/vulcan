@@ -84,55 +84,73 @@ func (c *Crazy) consume(ctx context.Context, topic string, partition int32) erro
 	if err != nil {
 		return err
 	}
-	for msg := range twc.Consume() {
-		tsb, err := parseTimeSeriesBatch(msg.Value)
-		if err != nil {
-			return err
-		}
-		for _, ts := range tsb {
-			id := ts.ID()
-			// attempt to get existing accumulator with just read lock.
+	msgch := twc.Consume()
+	gc := time.NewTicker(time.Minute * 10)
+	defer gc.Stop()
+	for {
+		select {
+		case <-gc.C:
+			cutoff := time.Now().Add(-c.cfg.MaxAge).UnixNano() / int64(time.Millisecond)
+			oldids := make([]string, 0, 1000)
 			c.m.RLock()
-			acc, ok := c.accs[id]
-			c.m.RUnlock()
-			if !ok {
-				// create an accumulator and try to set it.
-				myacc, err := NewAccumulator(&AccumulatorConfig{
-					MaxAge: c.cfg.MaxAge,
-				})
-				if err != nil {
-					return err
+			for id, acc := range c.accs {
+				if acc.Last() < cutoff {
+					oldids = append(oldids, id)
 				}
-				// clean up this new accumulator when it is done.
-				// go func(id string) {
-				// 	c.m.Lock()
-				// 	acc := c.accs[id]
-				// 	if acc == myacc {
-				// 		delete(c.accs, id)
-				// 	}
-				// 	c.m.Unlock()
-				// }(id)
-				// now with full lock, double-check there isn't an existing accumulator.
-				c.m.Lock()
-				racc, ok := c.accs[id]
-				if !ok {
-					c.accs[id] = myacc
-					acc = myacc
-				} else {
-					acc = racc
-				}
-				c.m.Unlock()
 			}
-			for _, s := range ts.Samples {
-				err := acc.Append(s)
-				if err != nil {
-					return err
+			c.m.RUnlock()
+			if len(oldids) == 0 {
+				continue
+			}
+			c.m.Lock()
+			for _, id := range oldids {
+				if acc, ok := c.accs[id]; ok && acc.Last() < cutoff {
+					delete(c.accs, id)
 				}
-				c.samplesTotal.WithLabelValues(topic, partitionStr).Inc()
+			}
+			c.m.Unlock()
+		case msg, ok := <-msgch:
+			if !ok {
+				return twc.Err()
+			}
+			tsb, err := parseTimeSeriesBatch(msg.Value)
+			if err != nil {
+				return err
+			}
+			for _, ts := range tsb {
+				id := ts.ID()
+				// attempt to get existing accumulator with just read lock.
+				c.m.RLock()
+				acc, ok := c.accs[id]
+				c.m.RUnlock()
+				if !ok {
+					// create an accumulator and try to set it.
+					myacc, err := NewAccumulator(&AccumulatorConfig{
+						MaxAge: c.cfg.MaxAge,
+					})
+					if err != nil {
+						return err
+					}
+					c.m.Lock()
+					racc, ok := c.accs[id]
+					if !ok {
+						c.accs[id] = myacc
+						acc = myacc
+					} else {
+						acc = racc
+					}
+					c.m.Unlock()
+				}
+				for _, s := range ts.Samples {
+					err := acc.Append(s)
+					if err != nil {
+						return err
+					}
+					c.samplesTotal.WithLabelValues(topic, partitionStr).Inc()
+				}
 			}
 		}
 	}
-	return twc.Err()
 }
 
 func (c *Crazy) handle(ctx context.Context, topic string, partition int32) {
