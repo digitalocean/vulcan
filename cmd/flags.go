@@ -22,6 +22,9 @@ const (
 // Vulcan command line flag names.
 const (
 	flagAddress               = "address"
+	flagCacherCleanup         = "cacher-cleanup"
+	flagCacherMaxAge          = "cacher-max-age"
+	flagCacherPort            = "cacher-port"
 	flagCassandraAddrs        = "cassandra-addrs"
 	flagCassandraKeyspace     = "cassandra-keyspace"
 	flagCassandraPageSize     = "cassandra-page-size"
@@ -33,7 +36,9 @@ const (
 	flagESSniff               = "es-sniff"
 	flagKafkaAddrs            = "kafka-addrs"
 	flagKafkaClientID         = "kafka-client-id"
+	flagKafkaHeartbeat        = "kafka-heartbeat"
 	flagKafkaGroupID          = "kafka-group-id"
+	flagKafkaSession          = "kafka-session"
 	flagKafkaTopic            = "kafka-topic"
 	flagKafkaBatchSize        = "kafka-batch-size"
 	flagNumCassandraWorkers   = "num-cassandra-workers"

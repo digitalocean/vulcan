@@ -11,7 +11,8 @@ import:
   subpackages:
   - model  
 - package: github.com/Shopify/sarama
-  version: v1.10.1
+  version: f672ba54efeac37acc7a48c3c0cc732e402fcf34
+  repo: https://github.com/supershabam/sarama
 - package: github.com/Sirupsen/logrus
   version: v0.10.0
 - package: github.com/gocql/gocql
@@ -31,3 +32,5 @@ import:
   version: 0.7.0
 - package: github.com/bsm/sarama-cluster
   version: v2.1.1
+- package: github.com/supershabam/sarama-cg
+  version: 5cb9221bf2fa72d1ec8066e564512e43b5744242
