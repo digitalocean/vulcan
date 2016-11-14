@@ -15,6 +15,7 @@
 package cassandra
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -27,14 +28,16 @@ import (
 const (
 	namespace = "vulcan"
 	subsystem = "cassandra"
-
-	writeTTLSampleCQL = `UPDATE uncompressed USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
 )
+
+var writeTTLSampleCQL = `UPDATE %s USING TTL ? SET value = ? WHERE fqmn = ? AND at = ?`
 
 // Writer implements ingester.Writer to persist TimeSeriesBatch samples
 // to Cassandra.
 type Writer struct {
 	prometheus.Collector
+
+	writeTTLSampleCQL string
 
 	s          *gocql.Session
 	ch         chan *writerPayload
@@ -72,13 +75,20 @@ type WriterConfig struct {
 	NumWorkers int
 	Session    *gocql.Session
 	TTL        time.Duration
+	TableName  string
+	Keyspace   string
 }
 
 // NewWriter creates a Writer and starts the configured number of
 // goroutines to write to Cassandra concurrently.
 func NewWriter(config *WriterConfig) *Writer {
 	w := &Writer{
-		s:          config.Session,
+		s: config.Session,
+		writeTTLSampleCQL: fmt.Sprintf(
+			writeTTLSampleCQL,
+			fmt.Sprintf("%s.%s", config.Keyspace, config.TableName),
+		),
+
 		ch:         make(chan *writerPayload),
 		ttlSeconds: int64(config.TTL.Seconds()),
 
@@ -173,5 +183,5 @@ func (w *Writer) write(id string, at int64, value float64) error {
 	defer func() {
 		w.sampleWriteDuration.Observe(time.Since(t0).Seconds())
 	}()
-	return w.s.Query(writeTTLSampleCQL, w.ttlSeconds, value, id, at).Exec()
+	return w.s.Query(w.writeTTLSampleCQL, w.ttlSeconds, value, id, at).Exec()
 }

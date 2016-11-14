@@ -52,7 +52,7 @@ func WriteHandler(f *Forwarder, compresstionType string) http.Handler {
 		}
 
 		var req remote.WriteRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		if err = proto.Unmarshal(reqBuf, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

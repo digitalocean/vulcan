@@ -16,6 +16,7 @@ package model
 
 import (
 	"encoding/json"
+	"sort"
 
 	"github.com/prometheus/common/model"
 )
@@ -24,6 +25,42 @@ import (
 type Sample struct {
 	TimestampMS int64
 	Value       float64
+}
+
+// sampleSorter allows us to sort by different attributes of Sample.
+// Implements sort.Interface.
+type sampleSorter struct {
+	samples []*Sample
+	by      func(s1, s2 *Sample) bool
+}
+
+// Len implements sort.Interface.
+func (s *sampleSorter) Len() int { return len(s.samples) }
+
+// Swap implments sort.Interface.
+func (s *sampleSorter) Swap(i, j int) {
+	s.samples[i], s.samples[j] = s.samples[j], s.samples[i]
+}
+
+// Less implements sort.Interface.
+func (s *sampleSorter) Less(i, j int) bool {
+	return s.by(s.samples[i], s.samples[j])
+}
+
+// SampleSorter allows the sorting of a Sample slice by some attribute.
+type SampleSorter func(s1, s2 *Sample) bool
+
+// Sort sorts a Sample slice.
+func (by SampleSorter) Sort(samples []*Sample) {
+	s := &sampleSorter{samples: samples, by: by}
+
+	sort.Sort(s)
+}
+
+// SortSampleByTS allows sorting by the sample collection time.  Alias of
+// the Less method, which implements sort.Interface.
+func SortSampleByTS(s1, s2 *Sample) bool {
+	return s1.TimestampMS < s2.TimestampMS
 }
 
 // TimeSeries is an identifying set of labels and one or more samples.
