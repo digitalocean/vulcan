@@ -63,7 +63,7 @@ func NewAccumulator(cfg *AccumulatorConfig) (*Accumulator, error) {
 	return a, nil
 }
 
-// Append appends a sample to the accumulator. If this causes
+// Append appends a sample to the accumulator.
 func (a *Accumulator) Append(sample *model.Sample) error {
 	a.m.Lock()
 	defer a.m.Unlock()
