@@ -1,0 +1,187 @@
+// Copyright 2016 The Vulcan Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cacher
+
+import (
+	"net/url"
+
+	"github.com/Sirupsen/logrus"
+	pmodel "github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/local/chunk"
+	"github.com/prometheus/prometheus/storage/metric"
+)
+
+// SeriesIterator fetches from HTTP cacher endpoint to serve datapoints.
+type SeriesIterator struct {
+	chunkIter  chunk.Iterator
+	curr, last *pmodel.SamplePair
+	list       []pmodel.SamplePair
+	idx        int
+	m          metric.Metric
+	ready      chan struct{}
+	resp       *chunksResp
+}
+
+// SeriesIteratorConfig is used in NewSeriesIterator to create a SeriesIterator.
+type SeriesIteratorConfig struct {
+	URL           *url.URL
+	Metric        metric.Metric
+	After, Before pmodel.Time
+}
+
+// NewSeriesIterator creates the iterator.
+func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
+	si := &SeriesIterator{
+		curr: &pmodel.SamplePair{
+			Timestamp: pmodel.ZeroSamplePair.Timestamp,
+			Value:     pmodel.ZeroSamplePair.Value,
+		},
+		last: &pmodel.SamplePair{
+			Timestamp: pmodel.ZeroSamplePair.Timestamp,
+			Value:     pmodel.ZeroSamplePair.Value,
+		},
+		list:  []pmodel.SamplePair{},
+		m:     config.Metric,
+		ready: make(chan struct{}),
+	}
+	// prefetch in the background
+	go func() {
+		err := si.run(config.URL)
+		if err != nil {
+			logrus.WithError(err).Info("while getting chunks")
+		}
+	}()
+	return si
+}
+
+func (si *SeriesIterator) run(u *url.URL) error {
+	defer close(si.ready)
+	cr, err := getChunks(u)
+	if err != nil {
+		return err
+	}
+	si.resp = cr
+	return nil
+}
+
+// ValueAtOrBeforeTime gets the value that is closest before the given time. In case a value
+// exists at precisely the given time, that value is returned. If no
+// applicable value exists, ZeroSamplePair is returned. This function assumes that
+// ValueAtOrBeforeTime will be called only with incrementing values of t and that
+// this SeriesIterator will only call either ValueAtOrBeforeTime or RangeValues, but
+// not both functions.
+func (si *SeriesIterator) ValueAtOrBeforeTime(t pmodel.Time) pmodel.SamplePair {
+	<-si.ready
+	// curr == nil means that there are no more values to iterate over.
+	if si.curr == nil {
+		return *si.last
+	}
+	for {
+		if si.curr.Timestamp > t {
+			return *si.last
+		}
+		si.last.Timestamp = si.curr.Timestamp
+		si.last.Value = si.curr.Value
+		ts, v, ok := si.next()
+		if !ok {
+			// done iterating; set curr to nil to signal no more values on iter.
+			si.curr = nil
+			return *si.last
+		}
+		si.curr.Timestamp = ts
+		si.curr.Value = v
+	}
+}
+
+// RangeValues gets all values contained within a given interval. RangeValues assumes
+// that the interval values OldestInclusive and NewestInclusive will always be
+// higher than the previous call to RangeValues.
+func (si *SeriesIterator) RangeValues(r metric.Interval) []pmodel.SamplePair {
+	<-si.ready
+	// curr == nil means that there are no more values to iterate over.
+	for si.curr != nil {
+		ts, v, ok := si.next()
+		if !ok {
+			si.curr = nil
+			break
+		}
+		si.curr.Timestamp = ts
+		si.curr.Value = v
+		si.list = append(si.list, pmodel.SamplePair{
+			Timestamp: si.curr.Timestamp,
+			Value:     si.curr.Value,
+		})
+		if si.curr.Timestamp > r.NewestInclusive {
+			break
+		}
+	}
+	// drop items in si.list that are older than OldestInclusive
+	cropCount := 0
+	for _, curr := range si.list {
+		if curr.Timestamp >= r.OldestInclusive {
+			break
+		}
+		cropCount++
+	}
+	si.list = si.list[cropCount:]
+	// return portion of si.list that is older than NewestInclusive
+	last := len(si.list)
+	for ; last > 0; last-- {
+		curr := si.list[last-1]
+		if curr.Timestamp <= r.NewestInclusive {
+			break
+		}
+	}
+	return si.list[:last]
+}
+
+// Metric returns the metric of the series that the iterator corresponds to.
+func (si *SeriesIterator) Metric() metric.Metric {
+	return si.m
+}
+
+// Close closes the iterator and releases the underlying data.
+func (si *SeriesIterator) Close() {
+	<-si.ready
+	return
+}
+
+func (si *SeriesIterator) next() (pmodel.Time, pmodel.SampleValue, bool) {
+	if si.resp == nil {
+		return 0, 0, false
+	}
+Start:
+	if si.chunkIter == nil {
+		if si.idx >= len(si.resp.Chunks) {
+			return 0, 0, false
+		}
+		chnk, err := chunk.NewForEncoding(chunk.Varbit)
+		if err != nil {
+			return 0, 0, false
+		}
+		err = chnk.UnmarshalFromBuf(si.resp.Chunks[si.idx])
+		if err != nil {
+			return 0, 0, false
+		}
+		si.chunkIter = chnk.NewIterator()
+		si.idx = si.idx + 1
+	}
+	if !si.chunkIter.Scan() {
+		si.chunkIter = nil
+		goto Start
+	}
+	sp := si.chunkIter.Value()
+	return sp.Timestamp, sp.Value, true
+}

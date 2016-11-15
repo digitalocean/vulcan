@@ -1,5 +1,5 @@
-hash: d74dc772cdfe72c3ef716579a3dfcb761ba2bb5b71825d8592f0c564e0b84b00
-updated: 2016-10-25T18:48:13.595582071-06:00
+hash: fd8847d21d2606b8ccbff5483d5f30b97b3e79568b00c14caa98963f207a2ea0
+updated: 2016-11-14T13:53:31.638658961-07:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -187,12 +187,17 @@ imports:
   - web
   - web/api/v1
   - web/ui
+- name: github.com/rcrowley/go-metrics
+  version: ab2277b1c5d15c3cba104e9cbddbdfc622df5ad8
 - name: github.com/samuel/go-zookeeper
   version: 87e1bca4477a3cc767ca71be023ced183d74e538
   subpackages:
   - zk
+- name: github.com/serialx/hashring
+  version: 75d57fa264ad17fd929304dfdb02c8e278c5c01c
 - name: github.com/Shopify/sarama
-  version: bd61cae2be85fa6ff40eb23dcdd24567967ac2ae
+  version: f672ba54efeac37acc7a48c3c0cc732e402fcf34
+  repo: https://github.com/supershabam/sarama
 - name: github.com/Sirupsen/logrus
   version: 4b6ea7319e214d98c938f12692336f7ca9348d6b
 - name: github.com/spf13/afero
@@ -210,6 +215,11 @@ imports:
   version: c7e63cf4530bcd3ba943729cee0efeff2ebea63f
 - name: github.com/spf13/viper
   version: 2f6a41490bc86fa9a8fb2fc03526a5795e904a17
+- name: github.com/supershabam/sarama-cg
+  version: 5cb9221bf2fa72d1ec8066e564512e43b5744242
+  subpackages:
+  - consumer
+  - protocol
 - name: github.com/syndtr/goleveldb
   version: 6ae1797c0b42b9323fc27ff7dcf568df88f2f33d
   subpackages:
