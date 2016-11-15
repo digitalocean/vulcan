@@ -22,9 +22,9 @@ const (
 // Vulcan command line flag names.
 const (
 	flagAddress               = "address"
+	flagAdvertise             = "advertise"
 	flagCacherCleanup         = "cacher-cleanup"
 	flagCacherMaxAge          = "cacher-max-age"
-	flagCacherPort            = "cacher-port"
 	flagCassandraAddrs        = "cassandra-addrs"
 	flagCassandraKeyspace     = "cassandra-keyspace"
 	flagCassandraPageSize     = "cassandra-page-size"

@@ -43,29 +43,35 @@ func Cacher() *cobra.Command {
 		Use:   "cacher",
 		Short: "cacher keeps recent metrics from the bus in-memory",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO make advertised addr more configurable..
-			hostname, err := os.Hostname()
-			if err != nil {
-				return err
-			}
-			port := viper.GetInt(flagCacherPort)
-			addr := fmt.Sprintf("%s:%d", hostname, port)
+			advertisedAddr := viper.GetString(flagAdvertise)
+			listenAddr := viper.GetString(flagAddress)
+			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
+			clientID := viper.GetString(flagKafkaClientID)
+			groupID := viper.GetString(flagKafkaGroupID)
+			kafkaSessionTimeout := viper.GetDuration(flagKafkaSession)
+			kafkaHeartbeat := viper.GetDuration(flagKafkaHeartbeat)
+			kafkaTopic := viper.GetString(flagKafkaTopic)
+			maxAge := viper.GetDuration(flagCacherMaxAge)
+			cleanup := viper.GetDuration(flagCacherCleanup)
+
+			logrus.WithFields(logrus.Fields{
+				"advertised_addr":       advertisedAddr,
+				"listen_addr":           listenAddr,
+				"kafka_addrs":           kafkaAddrs,
+				"kafka_client_id":       clientID,
+				"kafka_group_id":        groupID,
+				"kafka_heartbeat":       kafkaHeartbeat,
+				"kafka_session_timeout": kafkaSessionTimeout,
+				"kafka_topic":           kafkaTopic,
+				"max_age":               maxAge,
+			}).Info("starting cacher")
+
 			ud, err := json.Marshal(model.UserData{
-				AdvertisedAddr: addr,
+				AdvertisedAddr: advertisedAddr,
 			})
 			if err != nil {
 				return err
 			}
-			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
-			clientID := viper.GetString(flagKafkaClientID)
-			groupID := viper.GetString(flagKafkaGroupID)
-
-			logrus.WithFields(logrus.Fields{
-				"kafka_addrs":     kafkaAddrs,
-				"kafka_client_id": clientID,
-				"kafka_group_id":  groupID,
-			}).Info("starting cacher")
-
 			cfg := sarama.NewConfig()
 			cfg.Version = sarama.V0_10_0_0
 			cfg.ClientID = clientID
@@ -95,34 +101,49 @@ func Cacher() *cobra.Command {
 						Key: "hashring",
 					},
 				},
-				SessionTimeout: viper.GetDuration(flagKafkaSession),
-				Heartbeat:      viper.GetDuration(flagKafkaHeartbeat),
-				Topics:         []string{viper.GetString(flagKafkaTopic)},
+				SessionTimeout: kafkaSessionTimeout,
+				Heartbeat:      kafkaHeartbeat,
+				Topics:         []string{kafkaTopic},
 			})
 			c, err := cacher.NewCacher(&cacher.Config{
-				Cleanup:     viper.GetDuration(flagCacherCleanup),
+				Cleanup:     cleanup,
 				Client:      client,
 				Coordinator: coord,
-				MaxAge:      viper.GetDuration(flagCacherMaxAge),
-				Topic:       viper.GetString(flagKafkaTopic),
+				MaxAge:      maxAge,
+				Topic:       kafkaTopic,
 			})
 			if err != nil {
 				return err
 			}
 			prometheus.MustRegister(c)
+			// run http server in goroutine and close context and record error.
+			var outerErr error
 			go func() {
+				defer cancel()
 				http.Handle("/metrics", prometheus.Handler())
 				http.Handle("/chunks", c)
-				http.ListenAndServe(addr, nil)
+				err = http.ListenAndServe(listenAddr, nil)
+				if err != nil {
+					outerErr = err
+				}
 			}()
-			logrus.Info("running")
-			return c.Run()
+			err = c.Run()
+			if err != nil {
+				return err
+			}
+			return outerErr
 		},
 	}
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "localhost"
+	}
+	addr := fmt.Sprintf("%s:%d", hostname, 8080)
+	cchr.Flags().String(flagAddress, ":8080", "address to listen on")
+	cchr.Flags().String(flagAdvertise, addr, "address to advertise to others to connect to this cacher")
 	cchr.Flags().Duration(flagCacherCleanup, time.Minute*10, "garbage collection interval for cacher")
 	cchr.Flags().Duration(flagCacherMaxAge, time.Hour*4, "max age of samples to keep in-memory")
-	cchr.Flags().Int(flagCacherPort, 8080, "port to listen on")
 	cchr.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
 	cchr.Flags().String(flagKafkaClientID, "vulcan-cacher", "set the kafka client id")
 	cchr.Flags().String(flagKafkaGroupID, "vulcan-cacher", "workers with the same groupID will join the same Kafka ConsumerGroup")
