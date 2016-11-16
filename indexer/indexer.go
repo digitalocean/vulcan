@@ -15,14 +15,21 @@
 package indexer
 
 import (
+	"context"
+	"math"
+	"net/http"
 	"sync"
 	"time"
 
-	"github.com/digitalocean/vulcan/bus"
+	"github.com/Shopify/sarama"
+	"github.com/Sirupsen/logrus"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/digitalocean/vulcan/model"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/digitalocean/vulcan/querier"
+	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/prometheus/storage/remote"
+	cg "github.com/supershabam/sarama-cg"
+	"github.com/supershabam/sarama-cg/consumer"
 )
 
 const (
@@ -30,158 +37,159 @@ const (
 	subsystem = "indexer"
 )
 
-// Indexer represents an object that consumes metrics from a message bus and
-// writes them to indexing system.
+// Indexer allows the querier to discover what metrics should be involved in
+// a PromQL query.
 type Indexer struct {
-	prometheus.Collector
-
-	Source        bus.Source
-	SampleIndexer SampleIndexer
-
-	numIndexGoroutines int
-
-	once *sync.Once
-	done chan struct{}
-
-	cleanUp func()
-
-	indexBatchDurations prometheus.Histogram
-	errorsTotal         *prometheus.CounterVec
+	cfg     *Config
+	indexes map[int32]*Index
+	m       sync.RWMutex
 }
 
-// Config represents the configuration of an Indexer.  It takes an implmenter
-// Acksource of the target message bus and an implmenter of SampleIndexer of
-// the target indexing system.
+// Config is required to create a new indexer.
 type Config struct {
-	Source             bus.Source
-	SampleIndexer      SampleIndexer
-	NumIndexGoroutines int
-	// CleanUp represents a clean up function that gets called when the Stop function
-	// gets called and it is not nil.  Currently Stop only calls close on the Indexer's
-	// done channel which stops all worker goroutines.
-	CleanUp func()
+	Client      sarama.Client
+	Coordinator *cg.Coordinator
 }
 
-// NewIndexer creates a new instance of an Indexer.
-func NewIndexer(config *Config) *Indexer {
-	i := &Indexer{
-		Source:             config.Source,
-		SampleIndexer:      config.SampleIndexer,
-		numIndexGoroutines: config.NumIndexGoroutines,
-
-		errorsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "errors_total",
-				Help:      "Total number of errors of indexer stages",
-			},
-			[]string{"stage"},
-		),
-		indexBatchDurations: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "indexbatch_duration_seconds",
-				Help:      "Duration of processing of an entire timeseries batch.",
-				Buckets:   prometheus.DefBuckets,
-			},
-		),
-
-		once:    new(sync.Once),
-		done:    make(chan struct{}),
-		cleanUp: config.CleanUp,
-	}
-
-	return i
+// NewIndexer returns a new indexer but does not start it.
+func NewIndexer(cfg *Config) (*Indexer, error) {
+	return &Indexer{
+		cfg:     cfg,
+		indexes: map[int32]*Index{},
+	}, nil
 }
 
-// Describe implements prometheus.Collector.  Sends decriptors of the
-// instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
-func (i *Indexer) Describe(ch chan<- *prometheus.Desc) {
-	i.errorsTotal.Describe(ch)
-	i.indexBatchDurations.Describe(ch)
-}
-
-// Collect implements prometheus.Collector.  Sends metrics collected by the
-// instance's indexDurations, SampleIndexer, and errorsTotal to the parameter ch.
-func (i *Indexer) Collect(ch chan<- prometheus.Metric) {
-	i.errorsTotal.Collect(ch)
-	i.indexBatchDurations.Collect(ch)
-}
-
-// Run starts the indexer process of consuming from the bus and indexing to
-// the target indexing system.
+// Run blocks until complete or error.
 func (i *Indexer) Run() error {
-	var (
-		wg       sync.WaitGroup
-		writeErr error
-	)
-
-	log.Info("running")
-
-	for n := 0; n < i.numIndexGoroutines; n++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			if err := i.work(); err != nil {
-				writeErr = err
-			}
-		}()
-	}
-	wg.Wait()
-
-	if writeErr != nil {
-		return writeErr
-	}
-	return i.Source.Error()
+	return i.cfg.Coordinator.Run(i.handle)
 }
 
-// IndexSamples indexes a model.TimeSeriesBatch
-func (i *Indexer) IndexSamples(tsb model.TimeSeriesBatch) error {
-	t0 := time.Now()
-	defer i.indexBatchDurations.Observe(time.Since(t0).Seconds())
+// Resolve returns the unique timeseries IDs that match the provided matchers.
+func (i *Indexer) Resolve(matchers []*querier.Match) ([]string, error) {
+	i.m.RLock()
+	defer i.m.RUnlock()
+	result := []string{}
+	for _, idx := range i.indexes {
+		r, err := idx.Resolve(matchers)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r...)
+	}
+	return result, nil
+}
 
-	for _, ts := range tsb {
-		if err := i.SampleIndexer.IndexSample(ts); err != nil {
+// ServeHTTP allows the cacher to be attached to an http server.
+func (i *Indexer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ids, err := i.Resolve([]*querier.Match{
+		{
+			Type:  querier.Equal,
+			Name:  "__name__",
+			Value: "node_load1",
+		},
+	})
+	if err != nil {
+		logrus.WithError(err).Error("while resolving")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	spew.Fprintf(w, "resolved to:\n%#v", ids)
+	return
+}
+
+func (i *Indexer) handle(ctx context.Context, topic string, partition int32) {
+	log := logrus.WithFields(logrus.Fields{
+		"topic":     topic,
+		"partition": partition,
+	})
+	log.Info("taking control of topic-partition")
+	count := 0
+	backoff := time.NewTimer(time.Duration(0))
+	for {
+		count++
+		select {
+		case <-ctx.Done():
+			return
+		case <-backoff.C:
+			err := i.consume(ctx, topic, partition)
+			if err == nil {
+				logrus.WithFields(logrus.Fields{
+					"topic":     topic,
+					"partition": partition,
+				}).Info("relenquishing control of topic-partition")
+				return
+			}
+			// exponential backoff with cap at 10m
+			dur := time.Duration(math.Min(float64(time.Minute*10), float64(100*time.Millisecond)*math.Pow(float64(2), float64(count))))
+			logrus.WithFields(logrus.Fields{
+				"backoff_duration": dur,
+				"topic":            topic,
+				"partition":        partition,
+			}).WithError(err).Error("error while consuming but restarting after backoff")
+			backoff.Reset(dur)
+		}
+	}
+}
+
+func (i *Indexer) consume(ctx context.Context, topic string, partition int32) error {
+	idx := NewIndex()
+	i.m.Lock()
+	i.indexes[partition] = idx
+	i.m.Unlock()
+	defer func() {
+		i.m.Lock()
+		delete(i.indexes, partition)
+		i.m.Unlock()
+	}()
+	seek := func(topic string, partition int32) (int64, error) {
+		return i.cfg.Client.GetOffset(topic, partition, sarama.OffsetNewest)
+	}
+	c, err := consumer.NewSeek(&consumer.SeekConfig{
+		CacheDuration: time.Minute,
+		Client:        i.cfg.Client,
+		Context:       ctx,
+		Coordinator:   i.cfg.Coordinator,
+		Partition:     partition,
+		SeekFn:        seek,
+		Topic:         topic,
+	})
+	if err != nil {
+		return err
+	}
+	for msg := range c.Consume() {
+		tsb, err := parseTimeSeriesBatch(msg.Value)
+		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (i *Indexer) work() error {
-	for {
-		select {
-		case m, ok := <-i.Source.Messages():
-			if !ok {
-				return nil
-			}
-
-			if err := i.IndexSamples(m.TimeSeriesBatch); err != nil {
-				i.errorsTotal.WithLabelValues("index_sample").Add(1)
-
-				return err
-			}
-
-			m.Ack()
-
-		case <-i.done:
-			return nil
+		for _, ts := range tsb {
+			id := ts.ID()
+			idx.Add(id, ts.Labels)
 		}
 	}
+	return c.Err()
 }
 
-// Stop gracefully stops the indexer.  Takes a function f that can do any additional
-// clean up work.
-func (i *Indexer) Stop() {
-	i.once.Do(func() {
-		if i.cleanUp != nil {
-			i.cleanUp()
+func parseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
+	wr := &remote.WriteRequest{}
+	if err := proto.Unmarshal(in, wr); err != nil {
+		return nil, err
+	}
+	tsb := make(model.TimeSeriesBatch, 0, len(wr.Timeseries))
+	for _, protots := range wr.Timeseries {
+		ts := &model.TimeSeries{
+			Labels:  map[string]string{},
+			Samples: make([]*model.Sample, 0, len(protots.Samples)),
 		}
-		close(i.done)
-	})
+		for _, pair := range protots.Labels {
+			ts.Labels[pair.Name] = pair.Value
+		}
+		for _, protosamp := range protots.Samples {
+			ts.Samples = append(ts.Samples, &model.Sample{
+				TimestampMS: protosamp.TimestampMs,
+				Value:       protosamp.Value,
+			})
+		}
+		tsb = append(tsb, ts)
+	}
+	return tsb, nil
 }

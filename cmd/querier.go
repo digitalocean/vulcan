@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/cassandra"
-	"github.com/digitalocean/vulcan/elasticsearch"
 	"github.com/digitalocean/vulcan/querier"
 	"github.com/gocql/gocql"
 	hostpool "github.com/hailocab/go-hostpool"
@@ -36,15 +35,6 @@ func Querier() *cobra.Command {
 		Use:   "querier",
 		Short: "runs the query service that implements PromQL and prometheus v1 api",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// create elasticsearch metric resolver
-			r, err := elasticsearch.NewResolver(&elasticsearch.ResolverConfig{
-				URL:   viper.GetString(flagESAddrs),
-				Sniff: viper.GetBool(flagESSniff),
-				Index: viper.GetString(flagESIndex),
-			})
-			if err != nil {
-				return err
-			}
 			cluster := gocql.NewCluster(strings.Split(viper.GetString(flagCassandraAddrs), ",")...)
 			cluster.Keyspace = viper.GetString(flagCassandraKeyspace)
 			cluster.Timeout = viper.GetDuration(flagCassandraTimeout)
@@ -69,7 +59,7 @@ func Querier() *cobra.Command {
 			}
 			q := querier.NewQuerier(&querier.Config{
 				IteratorFactory: itrf,
-				Resolver:        r,
+				// Resolver:        r,
 			})
 			return q.Run()
 		},
