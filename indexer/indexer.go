@@ -16,14 +16,15 @@ package indexer
 
 import (
 	"context"
+	"fmt"
 	"math"
-	"net/http"
 	"sync"
 	"time"
 
+	netctx "golang.org/x/net/context"
+
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/digitalocean/vulcan/model"
 	"github.com/digitalocean/vulcan/querier"
 	"github.com/golang/protobuf/proto"
@@ -65,36 +66,59 @@ func (i *Indexer) Run() error {
 }
 
 // Resolve returns the unique timeseries IDs that match the provided matchers.
-func (i *Indexer) Resolve(matchers []*querier.Match) ([]string, error) {
+func (i *Indexer) Resolve(ctx netctx.Context, req *ResolveRequest) (*ResolveResponse, error) {
+	matchers := []*querier.Match{}
+	for _, m := range req.Matchers {
+		match := &querier.Match{
+			Name:  m.Name,
+			Value: m.Value,
+		}
+		switch m.Type {
+		case MatcherType_Equal:
+			match.Type = querier.Equal
+		case MatcherType_NotEqual:
+			match.Type = querier.NotEqual
+		case MatcherType_RegexMatch:
+			match.Type = querier.RegexMatch
+		case MatcherType_RegexNoMatch:
+			match.Type = querier.RegexNoMatch
+		}
+		matchers = append(matchers, match)
+	}
 	i.m.RLock()
 	defer i.m.RUnlock()
-	result := []string{}
+	results := make([][]string, len(i.indexes))
+	var outerErr error
+	wg := &sync.WaitGroup{}
+	wg.Add(len(i.indexes))
+	var count int
 	for _, idx := range i.indexes {
-		r, err := idx.Resolve(matchers)
-		if err != nil {
-			return nil, err
-		}
+		go func(w int, idx *Index) {
+			defer wg.Done()
+			r, err := idx.Resolve(matchers)
+			if err != nil {
+				outerErr = err
+			}
+			results[w] = r
+		}(count, idx)
+		count++
+	}
+	wg.Wait()
+	if outerErr != nil {
+		return nil, outerErr
+	}
+	result := []string{}
+	for _, r := range results {
 		result = append(result, r...)
 	}
-	return result, nil
+	return &ResolveResponse{
+		Ids: result,
+	}, nil
 }
 
-// ServeHTTP allows the cacher to be attached to an http server.
-func (i *Indexer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ids, err := i.Resolve([]*querier.Match{
-		{
-			Type:  querier.Equal,
-			Name:  "__name__",
-			Value: "node_load1",
-		},
-	})
-	if err != nil {
-		logrus.WithError(err).Error("while resolving")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	spew.Fprintf(w, "resolved to:\n%#v", ids)
-	return
+// Values returns the unique label values associated with the provided label name.
+func (i *Indexer) Values(netctx.Context, *ValuesRequest) (*ValuesResponse, error) {
+	return &ValuesResponse{}, fmt.Errorf("not implemented")
 }
 
 func (i *Indexer) handle(ctx context.Context, topic string, partition int32) {

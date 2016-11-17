@@ -18,12 +18,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
@@ -111,13 +113,17 @@ func Indexer() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			lis, err := net.Listen("tcp", listenAddr)
+			if err != nil {
+				return err
+			}
+			s := grpc.NewServer()
+			indexer.RegisterResolverServer(s, i)
 			// run http server in goroutine and close context and record error.
 			var outerErr error
 			go func() {
 				defer cancel()
-				// http.Handle("/metrics", prometheus.Handler())
-				http.Handle("/resolve", i)
-				err = http.ListenAndServe(listenAddr, nil)
+				err := s.Serve(lis)
 				if err != nil {
 					outerErr = err
 				}
