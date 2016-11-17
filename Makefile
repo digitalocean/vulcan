@@ -32,7 +32,7 @@ licensecheck:
 
 lint:
 	@echo ">> linting source"
-	@glide nv | xargs -L 1 golint
+	@find . -type f -iname '*.go' -not -path './vendor/*' -not -iname '*pb.go' | xargs -L 1 golint
 
 push: .makecache/docker
 	@echo ">> pushing docker image dovulcan/vulcan:$(GIT_SUMMARY)"

@@ -82,8 +82,20 @@ func (i *Indexer) Resolve(ctx netctx.Context, req *ResolveRequest) (*ResolveResp
 }
 
 // Values returns the unique label values associated with the provided label name.
-func (i *Indexer) Values(netctx.Context, *ValuesRequest) (*ValuesResponse, error) {
-	return &ValuesResponse{}, fmt.Errorf("not implemented")
+func (i *Indexer) Values(ctx netctx.Context, req *ValuesRequest) (*ValuesResponse, error) {
+	i.m.RLock()
+	idx, ok := i.indexes[req.Partition]
+	i.m.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown partition requested")
+	}
+	v, err := idx.Values(req.Field)
+	if err != nil {
+		return nil, err
+	}
+	return &ValuesResponse{
+		Values: v,
+	}, nil
 }
 
 func (i *Indexer) handle(ctx context.Context, topic string, partition int32) {

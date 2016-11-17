@@ -14,10 +14,7 @@
 
 package indexer
 
-import (
-	"fmt"
-	"sync"
-)
+import "sync"
 
 // NameIndex groups metrics by the label "__name__"
 type NameIndex struct {
@@ -25,6 +22,7 @@ type NameIndex struct {
 	m       sync.RWMutex
 }
 
+// NewNameIndex creates a NameIndex.
 func NewNameIndex() *NameIndex {
 	return &NameIndex{
 		entries: map[string]*Index{},
@@ -90,5 +88,16 @@ func (ni *NameIndex) Resolve(matchers []*Matcher) ([]string, error) {
 
 // Values returns the unique values associated with a label.
 func (ni *NameIndex) Values(field string) ([]string, error) {
-	return []string{}, fmt.Errorf("not implemented")
+	values := []string{}
+	ni.m.RLock()
+	defer ni.m.RUnlock()
+	for _, idx := range ni.entries {
+		v, err := idx.Values(field)
+		if err != nil {
+			return []string{}, err
+		}
+		values = append(values, v...)
+	}
+	values = dedupe(values)
+	return values, nil
 }

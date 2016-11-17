@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -61,6 +62,7 @@ func NewResolver(cfg *ResolverConfig) (*Resolver, error) {
 	return r, nil
 }
 
+// Resolve returns the matching TimeSeries for a provided set of matchers.
 func (r *Resolver) Resolve(ctx context.Context, matchers []*querier.Match) ([]*model.TimeSeries, error) {
 	next := make([]*Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
@@ -118,8 +120,52 @@ func (r *Resolver) Resolve(ctx context.Context, matchers []*querier.Match) ([]*m
 	return tsb, nil
 }
 
+// Values returns the unique label values for a provided label field.
 func (r *Resolver) Values(ctx context.Context, field string) ([]string, error) {
-	return []string{}, nil
+	wg := &sync.WaitGroup{}
+	var outerError error
+	r.m.RLock()
+	m := &sync.Mutex{}
+	result := make(map[int32][]string, len(r.partitionAddrs))
+	wg.Add(len(r.partitionAddrs))
+	for partition := range r.partitionAddrs {
+		go func(partition int32) {
+			defer wg.Done()
+			v, err := r.values(ctx, partition, field)
+			if err != nil {
+				outerError = err
+				return
+			}
+			m.Lock()
+			result[partition] = v
+			m.Unlock()
+		}(partition)
+	}
+	r.m.RUnlock()
+	wg.Wait()
+	values := []string{}
+	for _, part := range result {
+		values = append(values, part...)
+	}
+	values = dedupe(values)
+	return values, nil
+}
+
+func dedupe(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	next := make([]string, 0, len(in))
+	sort.Strings(in)
+	next = append(next, in[0])
+	for i, n := 1, 1; i < len(in); i++ {
+		if next[n-1] == in[i] {
+			continue
+		}
+		next = append(next, in[i])
+		n++
+	}
+	return next
 }
 
 func (r *Resolver) client(partition int32) (ResolverClient, error) {
@@ -171,6 +217,22 @@ func (r *Resolver) resolve(ctx context.Context, partition int32, matchers []*Mat
 		return []string{}, err
 	}
 	return resp.Ids, nil
+}
+
+func (r *Resolver) values(ctx context.Context, partition int32, field string) ([]string, error) {
+	c, err := r.client(partition)
+	if err != nil {
+		return []string{}, err
+	}
+	req := &ValuesRequest{
+		Field:     field,
+		Partition: partition,
+	}
+	resp, err := c.Values(ctx, req)
+	if err != nil {
+		return []string{}, err
+	}
+	return resp.Values, nil
 }
 
 func (r *Resolver) run() {

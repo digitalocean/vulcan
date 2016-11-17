@@ -46,6 +46,7 @@ message Matcher {
 
 message ValuesRequest {
   string field = 1;
+  int32 partition = 2;
 }
 
 message ValuesResponse {

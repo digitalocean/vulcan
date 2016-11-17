@@ -15,7 +15,6 @@
 package indexer
 
 import (
-	"fmt"
 	"regexp"
 	"sync"
 )
@@ -26,6 +25,7 @@ type Index struct {
 	m       sync.RWMutex
 }
 
+// NewIndex creates in index of metric ID to metric labels.
 func NewIndex() *Index {
 	return &Index{
 		entries: map[string]map[string]string{},
@@ -55,11 +55,11 @@ func (i *Index) Add(id string, labels map[string]string) {
 // Resolve returns the unique timeseries IDs that match the provided matchers.
 func (i *Index) Resolve(matchers []*Matcher) ([]string, error) {
 	i.m.RLock()
+	defer i.m.RUnlock()
 	current := make(map[string]map[string]string, len(i.entries))
 	for k, v := range i.entries {
 		current[k] = v
 	}
-	i.m.RUnlock()
 	// TODO magic re-ordering of matchers for maximum effectiveness.
 	for _, matcher := range matchers {
 		next := make(map[string]map[string]string, len(current))
@@ -114,5 +114,17 @@ func (i *Index) Resolve(matchers []*Matcher) ([]string, error) {
 
 // Values returns the unique values associated with a label.
 func (i *Index) Values(field string) ([]string, error) {
-	return []string{}, fmt.Errorf("not implemented")
+	i.m.RLock()
+	defer i.m.RUnlock()
+	values := map[string]bool{}
+	for _, labels := range i.entries {
+		if value, ok := labels[field]; ok {
+			values[value] = true
+		}
+	}
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	return result, nil
 }
