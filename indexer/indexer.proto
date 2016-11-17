@@ -24,6 +24,7 @@ service Resolver {
 
 message ResolveRequest {
   repeated Matcher matchers = 1;
+  int32 partition = 2;
 }
 
 message ResolveResponse {

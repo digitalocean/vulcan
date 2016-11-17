@@ -21,11 +21,20 @@ import (
 	"github.com/digitalocean/vulcan/model"
 )
 
-func TestIndex(t *testing.T) {
-	i := NewIndex()
+func TestNameIndex(t *testing.T) {
+	i := NewNameIndex()
 	entries := []map[string]string{
 		map[string]string{
-			"test": "value",
+			"__name__": "node_load1",
+			"region":   "nyc3",
+		},
+		map[string]string{
+			"__name__": "node_load1",
+			"region":   "nyc2",
+		},
+		map[string]string{
+			"region": "nyc3",
+			"oops":   "no name",
 		},
 	}
 	for _, entry := range entries {
@@ -43,14 +52,14 @@ func TestIndex(t *testing.T) {
 	ids, err := i.Resolve([]*Matcher{
 		{
 			Type:  MatcherType_Equal,
-			Name:  "test",
-			Value: "value",
+			Name:  "__name__",
+			Value: "node_load1",
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != 1 {
-		t.Errorf("expected ids to be len 1 but got %d", len(ids))
+	if len(ids) != 2 {
+		t.Errorf("expected ids to be len 2 but got %d", len(ids))
 	}
 }

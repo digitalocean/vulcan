@@ -26,7 +26,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
 	"github.com/digitalocean/vulcan/model"
-	"github.com/digitalocean/vulcan/querier"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/prometheus/storage/remote"
 	cg "github.com/supershabam/sarama-cg"
@@ -42,7 +41,7 @@ const (
 // a PromQL query.
 type Indexer struct {
 	cfg     *Config
-	indexes map[int32]*Index
+	indexes map[int32]*NameIndex
 	m       sync.RWMutex
 }
 
@@ -56,7 +55,7 @@ type Config struct {
 func NewIndexer(cfg *Config) (*Indexer, error) {
 	return &Indexer{
 		cfg:     cfg,
-		indexes: map[int32]*Index{},
+		indexes: map[int32]*NameIndex{},
 	}, nil
 }
 
@@ -67,52 +66,18 @@ func (i *Indexer) Run() error {
 
 // Resolve returns the unique timeseries IDs that match the provided matchers.
 func (i *Indexer) Resolve(ctx netctx.Context, req *ResolveRequest) (*ResolveResponse, error) {
-	matchers := []*querier.Match{}
-	for _, m := range req.Matchers {
-		match := &querier.Match{
-			Name:  m.Name,
-			Value: m.Value,
-		}
-		switch m.Type {
-		case MatcherType_Equal:
-			match.Type = querier.Equal
-		case MatcherType_NotEqual:
-			match.Type = querier.NotEqual
-		case MatcherType_RegexMatch:
-			match.Type = querier.RegexMatch
-		case MatcherType_RegexNoMatch:
-			match.Type = querier.RegexNoMatch
-		}
-		matchers = append(matchers, match)
-	}
 	i.m.RLock()
-	defer i.m.RUnlock()
-	results := make([][]string, len(i.indexes))
-	var outerErr error
-	wg := &sync.WaitGroup{}
-	wg.Add(len(i.indexes))
-	var count int
-	for _, idx := range i.indexes {
-		go func(w int, idx *Index) {
-			defer wg.Done()
-			r, err := idx.Resolve(matchers)
-			if err != nil {
-				outerErr = err
-			}
-			results[w] = r
-		}(count, idx)
-		count++
+	idx, ok := i.indexes[req.Partition]
+	i.m.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown partition requested")
 	}
-	wg.Wait()
-	if outerErr != nil {
-		return nil, outerErr
-	}
-	result := []string{}
-	for _, r := range results {
-		result = append(result, r...)
+	ids, err := idx.Resolve(req.Matchers)
+	if err != nil {
+		return nil, err
 	}
 	return &ResolveResponse{
-		Ids: result,
+		Ids: ids,
 	}, nil
 }
 
@@ -156,7 +121,7 @@ func (i *Indexer) handle(ctx context.Context, topic string, partition int32) {
 }
 
 func (i *Indexer) consume(ctx context.Context, topic string, partition int32) error {
-	idx := NewIndex()
+	idx := NewNameIndex()
 	i.m.Lock()
 	i.indexes[partition] = idx
 	i.m.Unlock()

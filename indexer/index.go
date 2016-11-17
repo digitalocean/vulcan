@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"regexp"
 	"sync"
-
-	"github.com/digitalocean/vulcan/querier"
 )
 
 // Index can resolve matchers to fully qualified metric names.
@@ -55,14 +53,14 @@ func (i *Index) Add(id string, labels map[string]string) {
 }
 
 // Resolve returns the unique timeseries IDs that match the provided matchers.
-func (i *Index) Resolve(matchers []*querier.Match) ([]string, error) {
+func (i *Index) Resolve(matchers []*Matcher) ([]string, error) {
 	i.m.RLock()
 	current := make(map[string]map[string]string, len(i.entries))
 	for k, v := range i.entries {
 		current[k] = v
 	}
 	i.m.RUnlock()
-	// TODO order the matchers in a way that filters the most values first and does regex last.
+	// TODO magic re-ordering of matchers for maximum effectiveness.
 	for _, matcher := range matchers {
 		next := make(map[string]map[string]string, len(current))
 	NextEntry:
@@ -72,17 +70,17 @@ func (i *Index) Resolve(matchers []*querier.Match) ([]string, error) {
 					continue
 				}
 				switch matcher.Type {
-				case querier.Equal:
+				case MatcherType_Equal:
 					if matcher.Value == value {
 						next[id] = labels
 						continue NextEntry
 					}
-				case querier.NotEqual:
+				case MatcherType_NotEqual:
 					if matcher.Value != value {
 						next[id] = labels
 						continue NextEntry
 					}
-				case querier.RegexMatch:
+				case MatcherType_RegexMatch:
 					re, err := regexp.Compile(matcher.Value)
 					if err != nil {
 						return nil, err
@@ -91,7 +89,7 @@ func (i *Index) Resolve(matchers []*querier.Match) ([]string, error) {
 						next[id] = labels
 						continue NextEntry
 					}
-				case querier.RegexNoMatch:
+				case MatcherType_RegexNoMatch:
 					re, err := regexp.Compile(matcher.Value)
 					if err != nil {
 						return nil, err
@@ -100,6 +98,8 @@ func (i *Index) Resolve(matchers []*querier.Match) ([]string, error) {
 						next[id] = labels
 						continue NextEntry
 					}
+				default:
+					panic("unhandled matcher type")
 				}
 			}
 		}

@@ -15,13 +15,18 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/digitalocean/vulcan/cassandra"
+	"github.com/Shopify/sarama"
+	"github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/cacher"
+	"github.com/digitalocean/vulcan/indexer"
 	"github.com/digitalocean/vulcan/querier"
-	"github.com/gocql/gocql"
-	hostpool "github.com/hailocab/go-hostpool"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,45 +40,72 @@ func Querier() *cobra.Command {
 		Use:   "querier",
 		Short: "runs the query service that implements PromQL and prometheus v1 api",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cluster := gocql.NewCluster(strings.Split(viper.GetString(flagCassandraAddrs), ",")...)
-			cluster.Keyspace = viper.GetString(flagCassandraKeyspace)
-			cluster.Timeout = viper.GetDuration(flagCassandraTimeout)
-			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
-			cluster.Consistency = gocql.LocalOne
-			cluster.ProtoVersion = 4
-			// Fallback simple host pool distributes queries and prevents sending queries to unresponsive hosts.
-			fallbackHostPolicy := gocql.HostPoolHostPolicy(hostpool.New(nil))
-			// Token-aware policy performs queries against a host responsible for the partition.
-			// TODO in gocql make token-aware able to write to any host for a partition when the
-			// replication factor is > 1.
-			// https://github.com/gocql/gocql/blob/4f49cd01c8939ce7624952fe286c3d08c4be7fa1/policies.go#L331
-			cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallbackHostPolicy)
-			sess, err := cluster.CreateSession()
+			ctx, cancel := context.WithCancel(context.Background())
+			term := make(chan os.Signal, 1)
+			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
+			go func() {
+				<-term
+				logrus.Info("shutting down...")
+				cancel()
+				<-term
+				os.Exit(1)
+			}()
+			listenAddr := viper.GetString(flagAddress)
+			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
+			clientID := viper.GetString(flagKafkaClientID)
+			cacherGroupID := viper.GetString(flagCacherGroupID)
+			indexerGroupID := viper.GetString(flagIndexerGroupID)
+			kafkaTopic := viper.GetString(flagKafkaTopic)
+			logrus.WithFields(logrus.Fields{
+				"listen_addr":      listenAddr,
+				"kafka_addrs":      kafkaAddrs,
+				"kafka_client_id":  clientID,
+				"cacher_group_id":  cacherGroupID,
+				"indexer_group_id": indexerGroupID,
+				"kafka_topic":      kafkaTopic,
+			}).Info("starting indexer")
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_10_0_0
+			cfg.ClientID = clientID
+			client, err := sarama.NewClient(kafkaAddrs, cfg)
 			if err != nil {
 				return err
 			}
-			itrf := &cassandra.IteratorFactory{
-				Session:  sess,
-				PageSize: viper.GetInt(flagCassandraPageSize),
-				Prefetch: viper.GetFloat64(flagCassandraPrefetch),
+			itrf, err := cacher.NewIteratorFactory(&cacher.IteratorFactoryConfig{
+				Client:  client,
+				Context: ctx,
+				GroupID: cacherGroupID,
+				Topic:   kafkaTopic,
+				Refresh: time.Minute,
+			})
+			if err != nil {
+				return err
+			}
+			rslvr, err := indexer.NewResolver(&indexer.ResolverConfig{
+				Client:  client,
+				Context: ctx,
+				GroupID: indexerGroupID,
+				Topic:   kafkaTopic,
+				Refresh: time.Minute,
+			})
+			if err != nil {
+				return err
 			}
 			q := querier.NewQuerier(&querier.Config{
 				IteratorFactory: itrf,
-				// Resolver:        r,
+				ListenAddr:      listenAddr,
+				Resolver:        rslvr,
 			})
 			return q.Run()
 		},
 	}
 
-	querier.Flags().String(flagCassandraAddrs, "", "cassandra01.example.com")
-	querier.Flags().String(flagCassandraKeyspace, "vulcan", "cassandra keyspace to query")
-	querier.Flags().Int(flagCassandraPageSize, magicPageSize, "number of samples to read from cassandra at a time")
-	querier.Flags().Float64(flagCassandraPrefetch, magicPrefetch, "prefetch next page when there are (prefetch * pageSize) number of rows remaining")
-	querier.Flags().Int(flagCassandraNumConns, 2, "number of connections to cassandra per node")
-	querier.Flags().Duration(flagCassandraTimeout, time.Second*2, "cassandra timeout duration")
-	querier.Flags().String(flagESAddrs, "http://elasticsearch:9200", "elasticsearch connection url")
-	querier.Flags().Bool(flagESSniff, true, "whether or not to sniff additional hosts in the cluster")
-	querier.Flags().String(flagESIndex, "vulcan", "the elasticsearch index to write documents into")
+	querier.Flags().String(flagAddress, ":9090", "address to listen on")
+	querier.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	querier.Flags().String(flagKafkaClientID, "vulcan-querier", "set the kafka client id")
+	querier.Flags().String(flagIndexerGroupID, "vulcan-indexer", "workers with the same groupID will join the same Kafka ConsumerGroup")
+	querier.Flags().String(flagCacherGroupID, "vulcan-cacher", "workers with the same groupID will join the same Kafka ConsumerGroup")
+	querier.Flags().String(flagKafkaTopic, "vulcan", "set the kafka topic to consume")
 
 	return querier
 }

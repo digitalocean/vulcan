@@ -30,6 +30,7 @@ import (
 // Querier serves as the layer that layer takes incoming user queries
 // and returns the results fetched from the storage system.
 type Querier struct {
+	cfg *Config
 	prometheus.Collector
 
 	itr IteratorFactory
@@ -41,12 +42,14 @@ type Querier struct {
 // Config represents the configuration of a Querier object.
 type Config struct {
 	IteratorFactory IteratorFactory
+	ListenAddr      string
 	Resolver        Resolver
 }
 
 // NewQuerier returns creates a new instance of Querier.
 func NewQuerier(config *Config) *Querier {
 	return &Querier{
+		cfg: config,
 		queryDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace: "vulcan",
@@ -93,27 +96,18 @@ func (q *Querier) Run() error {
 		QueryEngine:    queryEngine,
 		ExternalURL:    bsURL,
 	})
-	// status := &web.PrometheusStatus{
-	// 	TargetPools: func() map[string]retrieval.Targets {
-	// 		return map[string]retrieval.Targets{}
-	// 	},
-	// 	Rules: func() []rules.Rule {
-	// 		return []rules.Rule{}
-	// 	},
-	// 	Flags: map[string]string{},
-	// 	Birth: time.Now(),
-	// }
 	prometheus.MustRegister(w)
 	externalURL, _ := url.Parse("http://localhost:9090")
 	tm := &retrieval.TargetManager{}
 	webHandler := web.New(&web.Options{
+		Storage:       w,
 		Context:       context.Background(),
 		QueryEngine:   queryEngine,
 		TargetManager: tm,
 		RuleManager:   ruleManager,
 		Version:       &web.PrometheusVersion{},
 		Flags:         map[string]string{},
-		ListenAddress: ":9090",
+		ListenAddress: q.cfg.ListenAddr,
 		ExternalURL:   externalURL,
 		MetricsPath:   "/metrics",
 		RoutePrefix:   "/",
