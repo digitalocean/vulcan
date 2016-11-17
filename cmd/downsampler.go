@@ -76,6 +76,14 @@ func Downsampler() *cobra.Command {
 			cluster.NumConns = viper.GetInt(flagCassandraNumConns)
 			cluster.Consistency = gocql.LocalOne
 			cluster.ProtoVersion = 4
+
+			// Retry policy in case of failer.  Downsampler still stops on first retry failure.
+			retryPolicy := cassandra.NewSimpleTimedRetry(&cassandra.SimpleRetryConfig{
+				Retries:       viper.GetInt(flagCassandraRetryTimes),
+				BlockDuration: viper.GetDuration(flagCassandraRetryWait),
+				ResetDuration: viper.GetDuration(flagCassandraRetryReset),
+			})
+			cluster.RetryPolicy = retryPolicy
 			// Fallback simple host pool distributes queries and prevents sending queries to unresponsive hosts.
 			fallbackHostPolicy := gocql.HostPoolHostPolicy(hostpool.New(nil))
 			// Token-aware policy performs queries against a host responsible for the partition.
@@ -87,6 +95,7 @@ func Downsampler() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer sess.Close()
 
 			tablename := fmt.Sprintf("downsampler_%v", viper.GetDuration(flagDownsamplerResolution))
 			keyspace := viper.GetString(flagCassandraKeyspace)
@@ -106,6 +115,9 @@ func Downsampler() *cobra.Command {
 				TableName: tablename,
 				Keyspace:  keyspace,
 			})
+			if rr, ok := r.(*cassandra.Read); ok {
+				reg.MustRegister(rr)
+			}
 
 			log.WithFields(log.Fields{
 				"cassandra_address":  viper.GetString(flagCassandraAddrs),
@@ -114,10 +126,12 @@ func Downsampler() *cobra.Command {
 			})
 
 			ds := downsampler.NewDownsampler(&downsampler.Config{
-				Consumer:   s,
-				Writer:     w,
-				Reader:     r,
-				Resolution: viper.GetDuration(flagDownsamplerResolution),
+				Consumer:    s,
+				Writer:      w,
+				Reader:      r,
+				Resolution:  viper.GetDuration(flagDownsamplerResolution),
+				CleanupRate: viper.GetFloat64(flagDownsamplerCleanupRate),
+				CleanupFunc: retryPolicy.Stop,
 			})
 			reg.MustRegister(ds)
 
@@ -157,6 +171,10 @@ func Downsampler() *cobra.Command {
 	d.Flags().Duration(flagDownsampledTTL, time.Hour*24*30, "downsampled sample ttl")
 	d.Flags().Duration(flagDownsamplerResolution, time.Minute*15, "resolution duration")
 	d.Flags().Int(flagNumWorkers, 30, "number of concurrent downsampler workers")
+	d.Flags().Float64(flagDownsamplerCleanupRate, 4.0, "Rate relative to resolution duration of how often to garbage collect timeseries in memory")
+	d.Flags().Duration(flagCassandraRetryReset, 45*time.Minute, "duration for reset of cassandra reset count")
+	d.Flags().Duration(flagCassandraRetryWait, 3*time.Minute, "duration to wait before a cassandra retry attempt")
+	d.Flags().Int(flagCassandraRetryTimes, 25, "number of retry attempts to allow on cassandra queries before application quits")
 
 	return d
 }
