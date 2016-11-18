@@ -18,12 +18,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
@@ -43,8 +46,20 @@ func Cacher() *cobra.Command {
 		Use:   "cacher",
 		Short: "cacher keeps recent metrics from the bus in-memory",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithCancel(context.Background())
+			term := make(chan os.Signal, 1)
+			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
+			go func() {
+				<-term
+				logrus.Info("shutting down...")
+				cancel()
+				<-term
+				os.Exit(1)
+			}()
+
 			advertisedAddr := viper.GetString(flagAdvertise)
 			listenAddr := viper.GetString(flagAddress)
+			webListenAddr := viper.GetString(flagWebListenAddress)
 			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
 			clientID := viper.GetString(flagKafkaClientID)
 			groupID := viper.GetString(flagKafkaGroupID)
@@ -57,6 +72,7 @@ func Cacher() *cobra.Command {
 			logrus.WithFields(logrus.Fields{
 				"advertised_addr":       advertisedAddr,
 				"listen_addr":           listenAddr,
+				"web_listen_addr":       webListenAddr,
 				"kafka_addrs":           kafkaAddrs,
 				"kafka_client_id":       clientID,
 				"kafka_group_id":        groupID,
@@ -79,26 +95,17 @@ func Cacher() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			term := make(chan os.Signal, 1)
-			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
-			go func() {
-				<-term
-				logrus.Info("shutting down...")
-				cancel()
-				<-term
-				os.Exit(1)
-			}()
+
 			coord := cg.NewCoordinator(&cg.CoordinatorConfig{
 				Client:  client,
 				Context: ctx,
 				GroupID: groupID,
 				Protocols: []cg.ProtocolKey{
 					{
-						Protocol: &protocol.HashRing{
+						Protocol: &protocol.RoundRobin{
 							MyUserData: ud,
 						},
-						Key: "hashring",
+						Key: "roundrobin",
 					},
 				},
 				SessionTimeout: kafkaSessionTimeout,
@@ -115,22 +122,38 @@ func Cacher() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			lis, err := net.Listen("tcp", listenAddr)
+			if err != nil {
+				return err
+			}
 			prometheus.MustRegister(c)
-			// run http server in goroutine and close context and record error.
+			s := grpc.NewServer()
+			cacher.RegisterCacherServer(s, c)
 			var outerErr error
+			// run grpc server in goroutine and allow it to close context and record error if any.
 			go func() {
 				defer cancel()
-				http.Handle("/metrics", prometheus.Handler())
-				http.Handle("/chunks", c)
-				err = http.ListenAndServe(listenAddr, nil)
+				err := s.Serve(lis)
 				if err != nil {
 					outerErr = err
 				}
 			}()
+			// run http server in goroutine and allow it to close context and record error if any.
+			go func() {
+				defer cancel()
+				http.Handle("/metrics", prometheus.Handler())
+				err := http.ListenAndServe(webListenAddr, nil)
+				if err != nil {
+					outerErr = err
+				}
+			}()
+			// run cacher service until it's done (will stop when context is canceled)
 			err = c.Run()
 			if err != nil {
+				// if cacher failed, return its error
 				return err
 			}
+			// otherwise, the cacher stopped because the context canceled because of grpc/http error or shutdown.
 			return outerErr
 		},
 	}
@@ -139,9 +162,10 @@ func Cacher() *cobra.Command {
 	if err != nil {
 		hostname = "localhost"
 	}
-	addr := fmt.Sprintf("%s:%d", hostname, 8080)
-	cchr.Flags().String(flagAddress, ":8080", "address to listen on")
-	cchr.Flags().String(flagAdvertise, addr, "address to advertise to others to connect to this cacher")
+	addr := fmt.Sprintf("%s:%d", hostname, 8082)
+	cchr.Flags().String(flagAddress, ":8082", "rpc address to listen on")
+	cchr.Flags().String(flagWebListenAddress, ":8080", "web address for telemetry")
+	cchr.Flags().String(flagAdvertise, addr, "rpc address to advertise")
 	cchr.Flags().Duration(flagCacherCleanup, time.Minute*10, "garbage collection interval for cacher")
 	cchr.Flags().Duration(flagCacherMaxAge, time.Hour*4, "max age of samples to keep in-memory")
 	cchr.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")

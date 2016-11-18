@@ -15,35 +15,39 @@
 package cacher
 
 import (
-	"net/url"
+	"context"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
 	pmodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// SeriesIterator fetches from HTTP cacher endpoint to serve datapoints.
+// SeriesIterator retreives chunks from a CacherClient and iterates through them implementing the
+// prometheus local.SeriesIterator interface.
 type SeriesIterator struct {
+	cfg        *SeriesIteratorConfig
 	chunkIter  chunk.Iterator
 	curr, last *pmodel.SamplePair
-	list       []pmodel.SamplePair
 	idx        int
-	m          metric.Metric
+	list       []pmodel.SamplePair
 	ready      chan struct{}
-	resp       *chunksResp
+	raw        [][]byte
 }
 
 // SeriesIteratorConfig is used in NewSeriesIterator to create a SeriesIterator.
 type SeriesIteratorConfig struct {
-	URL           *url.URL
+	ID            string
 	Metric        metric.Metric
-	After, Before pmodel.Time
+	After, Before int64
+	Session       *Session
+	Errors        prometheus.Counter
 }
 
 // NewSeriesIterator creates the iterator.
-func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
+func NewSeriesIterator(cfg *SeriesIteratorConfig) *SeriesIterator {
 	si := &SeriesIterator{
+		cfg: cfg,
 		curr: &pmodel.SamplePair{
 			Timestamp: pmodel.ZeroSamplePair.Timestamp,
 			Value:     pmodel.ZeroSamplePair.Value,
@@ -53,27 +57,26 @@ func NewSeriesIterator(config *SeriesIteratorConfig) *SeriesIterator {
 			Value:     pmodel.ZeroSamplePair.Value,
 		},
 		list:  []pmodel.SamplePair{},
-		m:     config.Metric,
 		ready: make(chan struct{}),
 	}
-	// prefetch in the background
-	go func() {
-		err := si.run(config.URL)
-		if err != nil {
-			logrus.WithError(err).Info("while getting chunks")
-		}
-	}()
+	// fetch in the background since prometheus expects creation of SeriesIterator to return
+	// without blocking.
+	go si.fetch()
 	return si
 }
 
-func (si *SeriesIterator) run(u *url.URL) error {
+func (si *SeriesIterator) fetch() {
 	defer close(si.ready)
-	cr, err := getChunks(u)
-	if err != nil {
-		return err
+	req := &ChunksRequest{
+		Id:    si.cfg.ID,
+		After: si.cfg.After,
 	}
-	si.resp = cr
-	return nil
+	resp, err := si.cfg.Session.Chunks(context.Background(), req)
+	if err != nil {
+		si.cfg.Errors.Inc()
+		return
+	}
+	si.raw = resp.Chunks
 }
 
 // ValueAtOrBeforeTime gets the value that is closest before the given time. In case a value
@@ -149,7 +152,7 @@ func (si *SeriesIterator) RangeValues(r metric.Interval) []pmodel.SamplePair {
 
 // Metric returns the metric of the series that the iterator corresponds to.
 func (si *SeriesIterator) Metric() metric.Metric {
-	return si.m
+	return si.cfg.Metric
 }
 
 // Close closes the iterator and releases the underlying data.
@@ -159,19 +162,19 @@ func (si *SeriesIterator) Close() {
 }
 
 func (si *SeriesIterator) next() (pmodel.Time, pmodel.SampleValue, bool) {
-	if si.resp == nil {
+	if si.raw == nil {
 		return 0, 0, false
 	}
 Start:
 	if si.chunkIter == nil {
-		if si.idx >= len(si.resp.Chunks) {
+		if si.idx >= len(si.raw) {
 			return 0, 0, false
 		}
 		chnk, err := chunk.NewForEncoding(chunk.Varbit)
 		if err != nil {
 			return 0, 0, false
 		}
-		err = chnk.UnmarshalFromBuf(si.resp.Chunks[si.idx])
+		err = chnk.UnmarshalFromBuf(si.raw[si.idx])
 		if err != nil {
 			return 0, 0, false
 		}

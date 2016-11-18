@@ -97,7 +97,10 @@ func TestAccumulator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			chunks := a.ChunksAfter(0)
+			chunks, err := a.Chunks(0)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(chunks) != 0 {
 				t.Errorf("expected len chunks to be %d but got %d", 0, len(chunks))
 			}
@@ -112,7 +115,10 @@ func TestAccumulator(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				chunks := a.ChunksAfter(0)
+				chunks, err := a.Chunks(0)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if len(chunks) != 1 {
 					t.Errorf("expected len chunks to be %d but got %d", 1, len(chunks))
 				}
@@ -128,11 +134,17 @@ func TestAccumulator(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				chunks := a.ChunksAfter(end1.UnixNano() / int64(time.Millisecond))
+				chunks, err := a.Chunks(end1.UnixNano() / int64(time.Millisecond))
+				if err != nil {
+					t.Fatal(err)
+				}
 				if len(chunks) != 1 {
 					t.Errorf("expected len chunks to be %d but got %d", 1, len(chunks))
 				}
-				chunks = a.ChunksAfter(0)
+				chunks, err = a.Chunks(0)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if len(chunks) != 2 {
 					t.Errorf("expected len chunks to be %d but got %d", 2, len(chunks))
 				}
