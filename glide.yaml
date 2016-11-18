@@ -34,3 +34,10 @@ import:
   version: v2.1.1
 - package: github.com/supershabam/sarama-cg
   version: 5cb9221bf2fa72d1ec8066e564512e43b5744242
+- package: github.com/golang/protobuf
+  subpackages:
+  - proto
+- package: google.golang.org/grpc
+  version: v1.0.4
+  subpackages:
+  - stats

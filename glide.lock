@@ -1,5 +1,5 @@
-hash: fd8847d21d2606b8ccbff5483d5f30b97b3e79568b00c14caa98963f207a2ea0
-updated: 2016-11-14T13:53:31.638658961-07:00
+hash: 268430ddf7801aacfa66a42fa879c468774197af9bb4e7d30f7e4391e4d603f9
+updated: 2016-11-18T16:38:23.130580598-07:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -247,6 +247,12 @@ imports:
   subpackages:
   - context
   - context/ctxhttp
+  - http2
+  - http2/hpack
+  - idna
+  - internal/timeseries
+  - lex/httplex
+  - trace
 - name: golang.org/x/oauth2
   version: 1e695b1c8febf17aad3bfa7bf0a819ef94b98ad5
   subpackages:
@@ -285,6 +291,18 @@ imports:
   - internal/remote_api
   - internal/urlfetch
   - urlfetch
+- name: google.golang.org/grpc
+  version: 777daa17ff9b5daef1cfdf915088a2ada3332bf0
+  subpackages:
+  - codes
+  - credentials
+  - grpclog
+  - internal
+  - metadata
+  - naming
+  - peer
+  - stats
+  - transport
 - name: gopkg.in/fsnotify.v1
   version: a8a77c9133d2d6fd8334f3260d06f60e8d80a5fb
 - name: gopkg.in/inf.v0
