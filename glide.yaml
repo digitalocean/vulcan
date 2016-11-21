@@ -16,8 +16,6 @@ import:
 - package: github.com/Sirupsen/logrus
   version: v0.10.0
 - package: github.com/gocql/gocql
-- package: github.com/olivere/elastic
-  version: v3.0.51
 - package: github.com/prometheus/client_golang
   version: v0.8.0
   subpackages:

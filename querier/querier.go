@@ -32,6 +32,7 @@ import (
 type Querier struct {
 	prometheus.Collector
 
+	cfg *Config
 	itr IteratorFactory
 	r   Resolver
 
@@ -40,6 +41,7 @@ type Querier struct {
 
 // Config represents the configuration of a Querier object.
 type Config struct {
+	Addr            string
 	IteratorFactory IteratorFactory
 	Resolver        Resolver
 }
@@ -47,6 +49,7 @@ type Config struct {
 // NewQuerier returns creates a new instance of Querier.
 func NewQuerier(config *Config) *Querier {
 	return &Querier{
+		cfg: config,
 		queryDurations: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace: "vulcan",
@@ -113,7 +116,7 @@ func (q *Querier) Run() error {
 		RuleManager:   ruleManager,
 		Version:       &web.PrometheusVersion{},
 		Flags:         map[string]string{},
-		ListenAddress: ":9090",
+		ListenAddress: q.cfg.Addr,
 		ExternalURL:   externalURL,
 		MetricsPath:   "/metrics",
 		RoutePrefix:   "/",

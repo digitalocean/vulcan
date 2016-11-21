@@ -1,5 +1,5 @@
-hash: 268430ddf7801aacfa66a42fa879c468774197af9bb4e7d30f7e4391e4d603f9
-updated: 2016-11-18T16:38:23.130580598-07:00
+hash: cdd1cbe261ba8978e8f2eb776c327dd030c3299b9a2e175d2278a01015dcf542
+updated: 2016-11-21T11:43:13.12435671-07:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -124,8 +124,6 @@ imports:
   version: db96a2b759cdef4f11a34506a42eb8d1290c598e
 - name: github.com/mitchellh/mapstructure
   version: ca63d7c062ee3c9f34db231e352b60012b4fd0c1
-- name: github.com/olivere/elastic
-  version: 0e48129397ff05068bb2909503dd2fef1644c9db
 - name: github.com/pelletier/go-buffruneio
   version: df1e16fde7fc330a0ca68167c23bf7ed6ac31d6d
 - name: github.com/pelletier/go-toml
@@ -307,11 +305,6 @@ imports:
   version: a8a77c9133d2d6fd8334f3260d06f60e8d80a5fb
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
-- name: gopkg.in/olivere/elastic.v3
-  version: 0e48129397ff05068bb2909503dd2fef1644c9db
-  subpackages:
-  - backoff
-  - uritemplates
 - name: gopkg.in/yaml.v2
   version: 31c299268d302dd0aa9a0dcf765a3d58971ac83f
 testImports: []

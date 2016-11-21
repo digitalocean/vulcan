@@ -14,12 +14,6 @@
 
 package indexer
 
-import "github.com/digitalocean/vulcan/model"
+import "github.com/digitalocean/vulcan/querier"
 
-// SampleIndexer is an interface is provided to the indexer in order to index
-// metrics
-type SampleIndexer interface {
-	// IndexSample takes in a sample from the message bus and makes indexing
-	// decisions on the target indexing system.
-	IndexSample(*model.TimeSeries) error
-}
+var _ querier.Resolver = &Resolver{}

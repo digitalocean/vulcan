@@ -15,17 +15,25 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net"
-	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/digitalocean/vulcan/elasticsearch"
-	"github.com/digitalocean/vulcan/indexer"
-	"github.com/digitalocean/vulcan/kafka"
+	"google.golang.org/grpc"
 
-	"github.com/olivere/elastic"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/Shopify/sarama"
+	"github.com/Sirupsen/logrus"
+	"github.com/digitalocean/vulcan/indexer"
+	"github.com/digitalocean/vulcan/model"
+	cg "github.com/supershabam/sarama-cg"
+	"github.com/supershabam/sarama-cg/protocol"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -34,81 +42,113 @@ import (
 // indexer service accordingling.  It is the entry point for the Indexer
 // service.
 func Indexer() *cobra.Command {
-	var Indexer = &cobra.Command{
+	var idxr = &cobra.Command{
 		Use:   "indexer",
 		Short: "consumes metrics from the bus and makes them searchable",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// get kafka source
-			s, err := kafka.NewSource(&kafka.SourceConfig{
-				Addrs:    strings.Split(viper.GetString(flagKafkaAddrs), ","),
-				ClientID: viper.GetString(flagKafkaClientID),
-				GroupID:  viper.GetString(flagKafkaGroupID),
-				Topics:   []string{viper.GetString(flagKafkaTopic)},
+			advertisedAddr := viper.GetString(flagAdvertise)
+			listenAddr := viper.GetString(flagAddress)
+			kafkaAddrs := strings.Split(viper.GetString(flagKafkaAddrs), ",")
+			clientID := viper.GetString(flagKafkaClientID)
+			groupID := viper.GetString(flagKafkaGroupID)
+			kafkaSessionTimeout := viper.GetDuration(flagKafkaSession)
+			kafkaHeartbeat := viper.GetDuration(flagKafkaHeartbeat)
+			kafkaTopic := viper.GetString(flagKafkaTopic)
+
+			logrus.WithFields(logrus.Fields{
+				"advertised_addr":       advertisedAddr,
+				"listen_addr":           listenAddr,
+				"kafka_addrs":           kafkaAddrs,
+				"kafka_client_id":       clientID,
+				"kafka_group_id":        groupID,
+				"kafka_heartbeat":       kafkaHeartbeat,
+				"kafka_session_timeout": kafkaSessionTimeout,
+				"kafka_topic":           kafkaTopic,
+			}).Info("starting indexer")
+
+			ud, err := json.Marshal(model.UserData{
+				AdvertisedAddr: advertisedAddr,
 			})
 			if err != nil {
 				return err
 			}
 
-			// custom client used so we can more effeciently reuse connections.
-			customClient := &http.Client{
-				Transport: &http.Transport{
-					Dial: func(network, addr string) (net.Conn, error) {
-						return net.Dial(network, addr)
-					},
-					MaxIdleConnsPerHost: viper.GetInt("max-idle-conn"),
-				},
-			}
-
-			// allow sniff to be set because in some networking environments sniffing doesn't work. Should be allowed in prod
-			client, err := elastic.NewClient(
-				elastic.SetURL(viper.GetString("es")),
-				elastic.SetSniff(viper.GetBool("es-sniff")),
-				elastic.SetHttpClient(customClient),
-			)
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_10_0_0
+			cfg.ClientID = clientID
+			client, err := sarama.NewClient(kafkaAddrs, cfg)
 			if err != nil {
 				return err
 			}
-
-			// set up caching es sample indexer
-			esIndexer := elasticsearch.NewSampleIndexer(&elasticsearch.SampleIndexerConfig{
-				Client: client,
-				Index:  viper.GetString("es-index"),
-			})
-			sampleIndexer := indexer.NewCachingIndexer(&indexer.CachingIndexerConfig{
-				Indexer:     esIndexer,
-				MaxDuration: viper.GetDuration("es-writecache-duration"),
-			})
-
-			// create indexer and run
-			i := indexer.NewIndexer(&indexer.Config{
-				SampleIndexer:      sampleIndexer,
-				Source:             s,
-				NumIndexGoroutines: viper.GetInt("indexer-goroutines"),
-			})
-
-			prometheus.MustRegister(i)
-			prometheus.MustRegister(esIndexer)
-			prometheus.MustRegister(sampleIndexer)
-
+			ctx, cancel := context.WithCancel(context.Background())
+			term := make(chan os.Signal, 1)
+			signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 			go func() {
-				http.Handle("/metrics", prometheus.Handler())
-				http.ListenAndServe(":8080", nil)
+				<-term
+				logrus.Info("shutting down...")
+				cancel()
+				<-term
+				os.Exit(1)
 			}()
-
-			return i.Run()
+			coord := cg.NewCoordinator(&cg.CoordinatorConfig{
+				Client:  client,
+				Context: ctx,
+				GroupID: groupID,
+				Protocols: []cg.ProtocolKey{
+					{
+						Protocol: &protocol.RoundRobin{
+							MyUserData: ud,
+						},
+						Key: "roundrobin",
+					},
+				},
+				SessionTimeout: kafkaSessionTimeout,
+				Heartbeat:      kafkaHeartbeat,
+				Topics:         []string{kafkaTopic},
+			})
+			i, err := indexer.NewIndexer(&indexer.Config{
+				Client:      client,
+				Coordinator: coord,
+			})
+			if err != nil {
+				return err
+			}
+			lis, err := net.Listen("tcp", listenAddr)
+			if err != nil {
+				return err
+			}
+			s := grpc.NewServer()
+			indexer.RegisterResolverServer(s, i)
+			// run http server in goroutine and close context and record error.
+			var outerErr error
+			go func() {
+				defer cancel()
+				err := s.Serve(lis)
+				if err != nil {
+					outerErr = err
+				}
+			}()
+			err = i.Run()
+			if err != nil {
+				return err
+			}
+			return outerErr
 		},
 	}
 
-	Indexer.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
-	Indexer.Flags().String(flagKafkaClientID, "vulcan-indexer", "set the kafka client id")
-	Indexer.Flags().String(flagKafkaTopic, "vulcan", "topic to read in kafka")
-	Indexer.Flags().String(flagKafkaGroupID, "vulcan-indexer", "workers with the same groupID will join the same Kafka ConsumerGroup")
-	Indexer.Flags().String("es", "http://elasticsearch:9200", "elasticsearch connection url")
-	Indexer.Flags().Bool("es-sniff", true, "whether or not to sniff additional hosts in the cluster")
-	Indexer.Flags().String("es-index", "vulcan", "the elasticsearch index to write documents into")
-	Indexer.Flags().Duration("es-writecache-duration", time.Minute*10, "the duration to cache having written a value to es and to skip further writes of the same metric")
-	Indexer.Flags().Uint("indexer-goroutines", 30, "worker goroutines for writing indexes")
-	Indexer.Flags().Uint("max-idle-conn", 30, "max idle connections for fetching from data storage")
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "localhost"
+	}
+	addr := fmt.Sprintf("%s:%d", hostname, 8080)
+	idxr.Flags().String(flagAddress, ":8080", "address to listen on")
+	idxr.Flags().String(flagAdvertise, addr, "address to advertise to others to connect to this cacher")
+	idxr.Flags().String(flagKafkaAddrs, "", "one.example.com:9092,two.example.com:9092")
+	idxr.Flags().String(flagKafkaClientID, "vulcan-indexer", "set the kafka client id")
+	idxr.Flags().String(flagKafkaGroupID, "vulcan-indexer", "workers with the same groupID will join the same Kafka ConsumerGroup")
+	idxr.Flags().Duration(flagKafkaHeartbeat, time.Second*3, "kafka consumer group heartbeat interval")
+	idxr.Flags().Duration(flagKafkaSession, time.Second*30, "kafka consumer group session duration")
+	idxr.Flags().String(flagKafkaTopic, "vulcan", "set the kafka topic to consume")
 
-	return Indexer
+	return idxr
 }
