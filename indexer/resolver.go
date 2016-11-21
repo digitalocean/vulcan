@@ -105,6 +105,9 @@ func (r *Resolver) Resolve(ctx context.Context, matchers []*querier.Match) ([]*m
 	}
 	r.m.RUnlock()
 	wg.Wait()
+	if outerError != nil {
+		return []*model.TimeSeries{}, outerError
+	}
 	tsb := []*model.TimeSeries{}
 	for _, part := range result {
 		for _, id := range part {
