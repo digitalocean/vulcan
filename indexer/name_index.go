@@ -14,7 +14,11 @@
 
 package indexer
 
-import "sync"
+import (
+	"sync"
+
+	pmodel "github.com/prometheus/common/model"
+)
 
 // NameIndex groups metrics by the label "__name__"
 type NameIndex struct {
@@ -32,7 +36,7 @@ func NewNameIndex() *NameIndex {
 // Add inserts an id and its labels into the index. It is expected that the labels for
 // a given ID will always be the same.
 func (ni *NameIndex) Add(id string, labels map[string]string) {
-	name := labels["__name__"]
+	name := labels[pmodel.MetricNameLabel]
 	ni.m.RLock()
 	entry, ok := ni.entries[name]
 	ni.m.RUnlock()
@@ -58,7 +62,7 @@ func (ni *NameIndex) Add(id string, labels map[string]string) {
 func (ni *NameIndex) Resolve(matchers []*Matcher) ([]string, error) {
 	// ideally there's a name match and can resolve from just one index.
 	for _, matcher := range matchers {
-		if matcher.Type == MatcherType_Equal && matcher.Name == "__name__" {
+		if matcher.Type == MatcherType_Equal && matcher.Name == pmodel.MetricNameLabel {
 			ni.m.RLock()
 			i, ok := ni.entries[matcher.Value]
 			ni.m.RUnlock()
