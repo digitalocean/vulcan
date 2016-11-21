@@ -12,25 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ingester
+package downsampler
 
 import "github.com/digitalocean/vulcan/model"
 
-// MockWriter is a mock version of the Writer interface
-type MockWriter struct {
-	Args []model.TimeSeriesBatch
-	Err  error
-}
-
-var _ Writer = &MockWriter{}
-
-// Write implements the Writer interface.
-func (w *MockWriter) Write(tsb model.TimeSeriesBatch) error {
-	w.Args = append(w.Args, tsb)
-
-	if w.Err != nil {
-		return w.Err
-	}
-
-	return nil
+// Writer is what the ingester expects to be provided in order to write
+// TimeSeriesBatch to a database.
+type Writer interface {
+	Write(model.TimeSeriesBatch) error
 }

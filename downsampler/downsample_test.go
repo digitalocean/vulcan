@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/digitalocean/vulcan/cassandra"
-	"github.com/digitalocean/vulcan/ingester"
 	"github.com/digitalocean/vulcan/model"
 )
 
@@ -145,7 +144,7 @@ func TestShouldWrite(t *testing.T) {
 
 		t.Run(test.name, func(t *testing.T) {
 			ds := NewDownsampler(&Config{
-				Writer:     &ingester.MockWriter{},
+				Writer:     &MockWriter{},
 				Reader:     &cassandra.MockReader{Samples: test.readSamples},
 				Resolution: test.resolution,
 			})
@@ -215,7 +214,7 @@ func TestShouldWrite(t *testing.T) {
 
 		t.Run(test.name, func(t *testing.T) {
 			ds := NewDownsampler(&Config{
-				Writer: &ingester.MockWriter{},
+				Writer: &MockWriter{},
 				Reader: &cassandra.MockReader{
 					Samples: test.readSamples,
 					Err:     test.readErr,
