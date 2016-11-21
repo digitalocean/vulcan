@@ -166,7 +166,7 @@ func (w *Wrapper) MetricsForLabelMatchers(ctx context.Context, from, through mod
 		return result, err
 	}
 	// get matching time series
-	tsb, err := w.r.Resolve(m)
+	tsb, err := w.r.Resolve(ctx, m)
 	if err != nil {
 		return result, err
 	}
@@ -185,7 +185,7 @@ func (w *Wrapper) LastSampleForLabelMatchers(ctx context.Context, cutoff model.T
 
 // LabelValuesForLabelName gets all of the label values that are associated with a given label name.
 func (w *Wrapper) LabelValuesForLabelName(ctx context.Context, name model.LabelName) (model.LabelValues, error) {
-	vals, err := w.r.Values(string(name))
+	vals, err := w.r.Values(ctx, string(name))
 	if err != nil {
 		return model.LabelValues{}, err
 	}

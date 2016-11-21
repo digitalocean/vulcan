@@ -14,7 +14,11 @@
 
 package querier
 
-import "github.com/digitalocean/vulcan/model"
+import (
+	"context"
+
+	"github.com/digitalocean/vulcan/model"
+)
 
 // MatchType is an enum representing a PromQL label match from "=", "!=", "=~"
 // or "!~"
@@ -44,6 +48,6 @@ type Match struct {
 type Resolver interface {
 	// Resolve makes a query using the provided key value pairs of query
 	// params and transforms the results to TimeSeries.
-	Resolve([]*Match) ([]*model.TimeSeries, error)
-	Values(field string) ([]string, error)
+	Resolve(context.Context, []*Match) ([]*model.TimeSeries, error)
+	Values(ctx context.Context, field string) ([]string, error)
 }
