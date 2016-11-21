@@ -16,12 +16,12 @@ package cacher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"sync"
 	"time"
+
+	netctx "golang.org/x/net/context"
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
@@ -29,7 +29,6 @@ import (
 	"github.com/digitalocean/vulcan/model"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/remote"
 	cg "github.com/supershabam/sarama-cg"
 	cgconsumer "github.com/supershabam/sarama-cg/consumer"
@@ -88,35 +87,9 @@ func (c *Cacher) Collect(ch chan<- prometheus.Metric) {
 	c.samplesTotal.Collect(ch)
 }
 
-// ServeHTTP allows the cacher to be attached to an http server.
-func (c *Cacher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	chunks, err := c.ChunksAfter(id, time.Now().Add(-time.Hour*24*365).UnixNano()/int64(time.Millisecond))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	resp := &chunksResp{}
-	for _, chnk := range chunks {
-		buf := make([]byte, chunk.ChunkLen)
-		err := chnk.MarshalToBuf(buf)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resp.Chunks = append(resp.Chunks, buf)
-	}
-	w.Header().Add("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	err = enc.Encode(resp)
-	if err != nil {
-		logrus.WithError(err).Info("while encoding response to client")
-	}
-}
-
-// ChunksAfter returns the chunks for the given id that occur after the provided unix timestamp in ms.
-func (c *Cacher) ChunksAfter(id string, after int64) ([]chunk.Chunk, error) {
-	labels, err := model.LabelsFromTimeSeriesID(id)
+// Chunks returns the chunks for the given id that occur after the provided unix timestamp in ms.
+func (c *Cacher) Chunks(ctx netctx.Context, req *ChunksRequest) (*ChunksResponse, error) {
+	labels, err := model.LabelsFromTimeSeriesID(req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -129,12 +102,18 @@ func (c *Cacher) ChunksAfter(id string, after int64) ([]chunk.Chunk, error) {
 		return nil, fmt.Errorf("not found")
 	}
 	cons.M.RLock()
-	acc, ok := cons.Accs[id]
+	acc, ok := cons.Accs[req.Id]
 	cons.M.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("not found")
 	}
-	return acc.ChunksAfter(after), nil
+	chunks, err := acc.Chunks(req.After)
+	if err != nil {
+		return nil, err
+	}
+	return &ChunksResponse{
+		Chunks: chunks,
+	}, nil
 }
 
 func (c *Cacher) consume(ctx context.Context, topic string, partition int32) error {

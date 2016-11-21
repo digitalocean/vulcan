@@ -122,18 +122,23 @@ func (a *Accumulator) Append(sample *model.Sample) error {
 	return nil
 }
 
-// ChunksAfter returns a clone of all chunks in-time-ascending-order which contain
-// at least one value after the provided time. The result may be a length zero slice.
-func (a *Accumulator) ChunksAfter(after int64) []chunk.Chunk {
-	chunks := make([]chunk.Chunk, 0)
+// Chunks returns a slice of []byte representing each chunk that has data after
+// the specified timestamp.
+func (a *Accumulator) Chunks(after int64) ([][]byte, error) {
+	result := make([][]byte, 0)
 	a.m.Lock()
 	defer a.m.Unlock()
 	for i := len(a.chunks) - 1; i >= 0; i-- {
 		if a.chunks[i].End > after {
-			chunks = append(chunks, a.chunks[i].Chunk.Clone())
+			buf := make([]byte, chunk.ChunkLen)
+			err := a.chunks[i].Chunk.MarshalToBuf(buf)
+			if err != nil {
+				return [][]byte{}, err
+			}
+			result = append(result, buf)
 		}
 	}
-	return chunks
+	return result, nil
 }
 
 // Last returns the last appended timestamp in ms.

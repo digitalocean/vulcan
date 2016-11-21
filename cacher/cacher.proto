@@ -1,8 +1,3 @@
-#!/bin/bash
-
-# Verify that the correct license block is present in all Go source
-# files.
-read -r -d '' EXPECTED <<EndOfLicense
 // Copyright 2016 The Vulcan Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,19 +11,21 @@ read -r -d '' EXPECTED <<EndOfLicense
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-EndOfLicense
 
-# Scan each Go source file for license.
-EXIT=0
-GOFILES=$(find . -name '*.go' -not -path './vendor/*' -not -name '*.pb.go')
+syntax = "proto3";
 
-for FILE in $GOFILES; do
-	BLOCK=$(head -n 14 $FILE)
+package cacher;
 
-	if [ "$BLOCK" != "$EXPECTED" ]; then
-		echo "file missing license: $FILE"
-		EXIT=1
-	fi
-done
+service Cacher {
+  rpc Chunks (ChunksRequest) returns (ChunksResponse) {}
+}
 
-exit $EXIT
+message ChunksRequest {
+  string id = 1;
+  // after is a timestamp provided in milliseconds since the unix epoch.
+  int64 after = 2;
+}
+
+message ChunksResponse {
+  repeated bytes chunks = 1;
+}
