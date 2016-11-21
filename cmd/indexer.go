@@ -64,7 +64,7 @@ func Indexer() *cobra.Command {
 				"kafka_heartbeat":       kafkaHeartbeat,
 				"kafka_session_timeout": kafkaSessionTimeout,
 				"kafka_topic":           kafkaTopic,
-			}).Info("starting cacher")
+			}).Info("starting indexer")
 
 			ud, err := json.Marshal(model.UserData{
 				AdvertisedAddr: advertisedAddr,
