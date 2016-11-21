@@ -146,6 +146,9 @@ func (r *Resolver) Values(ctx context.Context, field string) ([]string, error) {
 	}
 	r.m.RUnlock()
 	wg.Wait()
+	if outerError != nil {
+		return []string{}, outerError
+	}
 	values := []string{}
 	for _, part := range result {
 		values = append(values, part...)
