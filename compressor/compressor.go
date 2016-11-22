@@ -45,6 +45,8 @@ type CompressorConfig struct {
 
 type Compressor struct {
 	cfg              *CompressorConfig
+	maxAge           int64 // max age in milliseconds
+	maxIdle          int64 // max idle in milliseconds
 	ttl              int64 // time to live in seconds.
 	flushUtilization prometheus.Summary
 	highwatermark    *prometheus.GaugeVec
@@ -55,8 +57,10 @@ type Compressor struct {
 
 func NewCompressor(cfg *CompressorConfig) (*Compressor, error) {
 	return &Compressor{
-		cfg: cfg,
-		ttl: int64(cfg.TTL.Seconds()),
+		cfg:     cfg,
+		maxAge:  int64(cfg.MaxAge.Seconds()),
+		maxIdle: int64(cfg.MaxIdle.Seconds()),
+		ttl:     int64(cfg.TTL.Seconds()),
 		flushUtilization: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: "vulcan",
 			Subsystem: "compressor",
@@ -175,11 +179,10 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 	if err != nil {
 		return err
 	}
-	// TODO: expire elements in acc that haven't received an update. - idle
-	// TODO: expire chunks that have values that are too old. - maxAge
 	chunks := map[string]chunk.Chunk{}
 	// iterate through messages from this partition in-order committing the offset upon completion.
 	for msg := range cr.Consume() {
+		msgt := msg.Timestamp.UnixNano() / int64(time.Millisecond)
 		c.highwatermark.WithLabelValues(topic, partitionStr).Set(float64(cr.HighWaterMarkOffset()))
 		c.offset.WithLabelValues(topic, partitionStr).Set(float64(msg.Offset))
 		flush := map[string][]chunk.Chunk{}
@@ -237,6 +240,32 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 			}
 			c.samplesTotal.WithLabelValues(topic, partitionStr).Add(float64(len(ts.Samples)))
 		}
+		oldids := []string{}
+		for id, chnk := range chunks {
+			t := int64(chnk.FirstTime())
+			if msgt-t > c.maxAge {
+				if _, ok := flush[id]; !ok {
+					flush[id] = make([]chunk.Chunk, 0, 1)
+				}
+				flush[id] = append(flush[id], chnk)
+				oldids = append(oldids, id)
+				continue
+			}
+			last, err := chnk.NewIterator().LastTimestamp()
+			if err != nil {
+				return err
+			}
+			if msgt-int64(last) > c.maxIdle {
+				if _, ok := flush[id]; !ok {
+					flush[id] = make([]chunk.Chunk, 0, 1)
+				}
+				flush[id] = append(flush[id], chnk)
+				oldids = append(oldids, id)
+			}
+		}
+		for _, id := range oldids {
+			delete(chunks, id)
+		}
 		// TODO keep to-flush in memory and don't call commit offset each time; instead call commit offset
 		// once the in-memory buffer has been flushed (but not on each message read)
 		err = c.flush(flush)
@@ -289,10 +318,11 @@ func (c *Compressor) seek(topic string, partition int32) (int64, error) {
 }
 
 func (c *Compressor) write(id string, chnk chunk.Chunk) error {
-	end, err := c.lastTime(chnk)
+	end, err := chnk.NewIterator().LastTimestamp()
 	if err != nil {
 		return err
 	}
+	// TODO is it possible to marshal a resized and fully utilized chunk? As-is, chunks are always 1024 bytes.
 	var buf []byte
 	err = chnk.MarshalToBuf(buf)
 	if err != nil {
@@ -306,10 +336,11 @@ func (c *Compressor) write(id string, chnk chunk.Chunk) error {
 	return err
 }
 
-func (c *Compressor) lastTime(chnk chunk.Chunk) (int64, error) {
-	iter := chnk.NewIterator()
-	t, err := iter.LastTimestamp()
-	return int64(t), err
+func (c *Compressor) lastTime(id string) (int64, error) {
+	sql := `SELECT end FROM compressed WHERE id = ? ORDER BY end DESC LIMIT 1`
+	var end int64
+	err := c.cfg.Session.Query(sql, id).Scan(&end)
+	return end, err
 }
 
 func parseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
