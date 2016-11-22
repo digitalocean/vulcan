@@ -355,7 +355,7 @@ func (c *Compressor) write(id string, chnk chunk.Chunk) error {
 	if err != nil {
 		return err
 	}
-	sql := `UPDATE compressed USING TTL ? SET value = ? WHERE id = ? AND end = ?`
+	sql := `UPDATE compressedtest USING TTL ? SET value = ? WHERE id = ? AND end = ?`
 	c.flushUtilization.Observe(chnk.Utilization())
 	t0 := time.Now()
 	err = c.cfg.Session.Query(sql, c.ttl, buf, id, end).Exec()
@@ -364,11 +364,14 @@ func (c *Compressor) write(id string, chnk chunk.Chunk) error {
 }
 
 func (c *Compressor) lastTime(id string) (int64, error) {
-	sql := `SELECT end FROM compressed WHERE id = ? ORDER BY end DESC LIMIT 1`
+	sql := `SELECT end FROM compressedtest WHERE id = ? ORDER BY end DESC LIMIT 1`
 	var end int64
 	t0 := time.Now()
 	err := c.cfg.Session.Query(sql, id).Scan(&end)
 	c.fetchDuration.Observe(time.Since(t0).Seconds())
+	if err == gocql.ErrNotFound {
+		return 0, nil
+	}
 	return end, err
 }
 

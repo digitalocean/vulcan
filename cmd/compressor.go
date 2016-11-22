@@ -62,6 +62,8 @@ func Compressor() *cobra.Command {
 			kafkaSessionTimeout := viper.GetDuration(flagKafkaSession)
 			kafkaHeartbeat := viper.GetDuration(flagKafkaHeartbeat)
 			kafkaTopic := viper.GetString(flagKafkaTopic)
+			maxAge := viper.GetDuration(flagMaxAge)
+			maxIdle := viper.GetDuration(flagMaxIdle)
 
 			logrus.WithFields(logrus.Fields{
 				"web_listen_addr":       webListenAddr,
@@ -74,6 +76,8 @@ func Compressor() *cobra.Command {
 				"cassandra_addrs":       cassandraAddrs,
 				"cassandra_keyspace":    cassandraKeyspace,
 				"cassandra_timeout":     cassandraTimeout,
+				"max_age":               maxAge,
+				"max_idle":              maxIdle,
 			}).Info("starting cacher")
 
 			// Setup Cassandra writer
@@ -115,6 +119,8 @@ func Compressor() *cobra.Command {
 				Client:      client,
 				Coordinator: coord,
 				GroupID:     groupID,
+				MaxAge:      maxAge,
+				MaxIdle:     maxIdle,
 				Session:     sess,
 				TTL:         time.Hour * 24 * 3,
 			})
@@ -140,6 +146,8 @@ func Compressor() *cobra.Command {
 		},
 	}
 
+	cmpr.Flags().Duration(flagMaxIdle, time.Minute*30, "maximum duration between an identical metric before it is flushed")
+	cmpr.Flags().Duration(flagMaxAge, time.Hour*2, "maximum age of a metric before it is flushed")
 	cmpr.Flags().Duration(flagCassandraTimeout, time.Second*2, "cassandra timeout duration")
 	cmpr.Flags().Int(flagCassandraNumConns, 5, "number of connections to cassandra per node")
 	cmpr.Flags().Int(flagNumCassandraWorkers, 200, "number of ingester goroutines to write to cassandra")
