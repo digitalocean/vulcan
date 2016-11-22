@@ -158,6 +158,11 @@ func (c *Compressor) handle(ctx context.Context, topic string, partition int32) 
 	}
 }
 
+type chunkLast struct {
+	Chunk chunk.Chunk
+	MinTS int64
+}
+
 func (c *Compressor) consume(ctx context.Context, topic string, partition int32) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // ensure consumer context is canceled nomatter why we exit this function.
@@ -179,7 +184,7 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 	if err != nil {
 		return err
 	}
-	chunks := map[string]chunk.Chunk{}
+	acc := map[string]*chunkLast{}
 	// iterate through messages from this partition in-order committing the offset upon completion.
 	for msg := range cr.Consume() {
 		msgt := msg.Timestamp.UnixNano() / int64(time.Millisecond)
@@ -192,15 +197,28 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 		}
 		for _, ts := range tsb {
 			id := ts.ID()
-			if _, ok := chunks[id]; !ok {
+			if _, ok := acc[id]; !ok {
 				chnk, err := chunk.NewForEncoding(chunk.Varbit)
 				if err != nil {
 					return err
 				}
-				chunks[id] = chnk
+				// TODO batch all missing IDs and fetch their times concurrently.
+				last, err := c.lastTime(id)
+				if err != nil {
+					return err
+				}
+				acc[id] = &chunkLast{
+					Chunk: chnk,
+					MinTS: last,
+				}
 			}
 			for _, s := range ts.Samples {
-				next, err := chunks[id].Add(pmodel.SamplePair{
+				cl := acc[id]
+				// don't process samples that have already been persisted.
+				if s.TimestampMS < cl.MinTS {
+					continue
+				}
+				next, err := cl.Chunk.Add(pmodel.SamplePair{
 					Timestamp: pmodel.Time(s.TimestampMS),
 					Value:     pmodel.SampleValue(s.Value),
 				})
@@ -209,7 +227,7 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 				}
 				// if added sample to chunk without overflow
 				if len(next) == 1 {
-					chunks[id] = next[0]
+					acc[id].Chunk = next[0]
 					continue
 				}
 				if len(next) != 2 {
@@ -241,17 +259,17 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 			c.samplesTotal.WithLabelValues(topic, partitionStr).Add(float64(len(ts.Samples)))
 		}
 		oldids := []string{}
-		for id, chnk := range chunks {
-			t := int64(chnk.FirstTime())
+		for id, cl := range acc {
+			t := int64(cl.Chunk.FirstTime())
 			if msgt-t > c.maxAge {
 				if _, ok := flush[id]; !ok {
 					flush[id] = make([]chunk.Chunk, 0, 1)
 				}
-				flush[id] = append(flush[id], chnk)
+				flush[id] = append(flush[id], cl.Chunk)
 				oldids = append(oldids, id)
 				continue
 			}
-			last, err := chnk.NewIterator().LastTimestamp()
+			last, err := cl.Chunk.NewIterator().LastTimestamp()
 			if err != nil {
 				return err
 			}
@@ -259,12 +277,12 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 				if _, ok := flush[id]; !ok {
 					flush[id] = make([]chunk.Chunk, 0, 1)
 				}
-				flush[id] = append(flush[id], chnk)
+				flush[id] = append(flush[id], cl.Chunk)
 				oldids = append(oldids, id)
 			}
 		}
 		for _, id := range oldids {
-			delete(chunks, id)
+			delete(acc, id)
 		}
 		// TODO keep to-flush in memory and don't call commit offset each time; instead call commit offset
 		// once the in-memory buffer has been flushed (but not on each message read)
