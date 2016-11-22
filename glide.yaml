@@ -31,7 +31,7 @@ import:
 - package: github.com/bsm/sarama-cluster
   version: v2.1.1
 - package: github.com/supershabam/sarama-cg
-  version: 5cb9221bf2fa72d1ec8066e564512e43b5744242
+  version: 158209ad7b5d3ae387b68c924697de9892e4717f
 - package: github.com/golang/protobuf
   subpackages:
   - proto

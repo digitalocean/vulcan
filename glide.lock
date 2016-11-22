@@ -1,5 +1,5 @@
-hash: cdd1cbe261ba8978e8f2eb776c327dd030c3299b9a2e175d2278a01015dcf542
-updated: 2016-11-21T11:43:13.12435671-07:00
+hash: a3e9070748ac72d9f843d0b6810e5e7b6d1cf0465a39b3369c8d542af94811bd
+updated: 2016-11-22T02:28:09.248160174-07:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -214,7 +214,7 @@ imports:
 - name: github.com/spf13/viper
   version: 2f6a41490bc86fa9a8fb2fc03526a5795e904a17
 - name: github.com/supershabam/sarama-cg
-  version: 5cb9221bf2fa72d1ec8066e564512e43b5744242
+  version: 158209ad7b5d3ae387b68c924697de9892e4717f
   subpackages:
   - consumer
   - protocol
