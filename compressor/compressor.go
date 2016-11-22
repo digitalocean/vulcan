@@ -18,6 +18,7 @@ import (
 	"context"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -204,23 +205,45 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 		if err != nil {
 			return err
 		}
+		// handle any new ids including fetching from DB their last timestamp.
+		newids := []string{}
 		for _, ts := range tsb {
 			id := ts.ID()
 			if _, ok := acc[id]; !ok {
+				newids = append(newids, id)
+			}
+		}
+		wg := &sync.WaitGroup{}
+		l := &sync.Mutex{}
+		var outerErr error
+		wg.Add(len(newids))
+		for _, id := range newids {
+			go func(id string) {
+				defer wg.Done()
 				chnk, err := chunk.NewForEncoding(chunk.Varbit)
 				if err != nil {
-					return err
+					outerErr = err
+					return
 				}
-				// TODO batch all missing IDs and fetch their times concurrently.
 				last, err := c.lastTime(id)
 				if err != nil {
-					return err
+					outerErr = err
+					return
 				}
+				l.Lock()
 				acc[id] = &chunkLast{
 					Chunk: chnk,
 					MinTS: last,
 				}
-			}
+				l.Unlock()
+			}(id)
+		}
+		wg.Wait()
+		if outerErr != nil {
+			return err
+		}
+		for _, ts := range tsb {
+			id := ts.ID()
 			for _, s := range ts.Samples {
 				cl := acc[id]
 				// don't process samples that have already been persisted.
