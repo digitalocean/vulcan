@@ -48,6 +48,7 @@ type Compressor struct {
 	maxAge           int64 // max age in milliseconds
 	maxIdle          int64 // max idle in milliseconds
 	ttl              int64 // time to live in seconds.
+	fetchDuration    prometheus.Summary
 	flushUtilization prometheus.Summary
 	highwatermark    *prometheus.GaugeVec
 	offset           *prometheus.GaugeVec
@@ -61,6 +62,12 @@ func NewCompressor(cfg *CompressorConfig) (*Compressor, error) {
 		maxAge:  int64(cfg.MaxAge.Seconds()),
 		maxIdle: int64(cfg.MaxIdle.Seconds()),
 		ttl:     int64(cfg.TTL.Seconds()),
+		fetchDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace: "vulcan",
+			Subsystem: "compressor",
+			Name:      "fetch_duration_seconds",
+			Help:      "Summary of durations taken getting end time from database",
+		}),
 		flushUtilization: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: "vulcan",
 			Subsystem: "compressor",
@@ -101,6 +108,7 @@ func NewCompressor(cfg *CompressorConfig) (*Compressor, error) {
 
 // Describe implements prometheus.Collector.
 func (c *Compressor) Describe(ch chan<- *prometheus.Desc) {
+	c.fetchDuration.Describe(ch)
 	c.flushUtilization.Describe(ch)
 	c.highwatermark.Describe(ch)
 	c.offset.Describe(ch)
@@ -110,8 +118,9 @@ func (c *Compressor) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (c *Compressor) Collect(ch chan<- prometheus.Metric) {
-	c.highwatermark.Collect(ch)
+	c.fetchDuration.Collect(ch)
 	c.flushUtilization.Collect(ch)
+	c.highwatermark.Collect(ch)
 	c.offset.Collect(ch)
 	c.samplesTotal.Collect(ch)
 	c.writeDuration.Collect(ch)
@@ -357,7 +366,9 @@ func (c *Compressor) write(id string, chnk chunk.Chunk) error {
 func (c *Compressor) lastTime(id string) (int64, error) {
 	sql := `SELECT end FROM compressed WHERE id = ? ORDER BY end DESC LIMIT 1`
 	var end int64
+	t0 := time.Now()
 	err := c.cfg.Session.Query(sql, id).Scan(&end)
+	c.fetchDuration.Observe(time.Since(t0).Seconds())
 	return end, err
 }
 
