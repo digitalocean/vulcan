@@ -24,6 +24,7 @@ import (
 	"github.com/digitalocean/vulcan/model"
 
 	log "github.com/Sirupsen/logrus"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -51,7 +52,8 @@ type Downsampler struct {
 	// conversions.
 	resolution int64
 
-	cleanupF func()
+	cleanupRate float64
+	cleanupF    func()
 
 	lastWrite map[string]*int64
 
@@ -59,13 +61,14 @@ type Downsampler struct {
 	mutex *sync.RWMutex
 	once  *sync.Once
 
-	stateHashLength         prometheus.Gauge
-	stateHashDeletes        prometheus.Counter
-	writeCount              prometheus.Counter
-	readCount               *prometheus.CounterVec
-	memReadDuration         prometheus.Histogram
-	batchProcessDuration    prometheus.Histogram
-	timeseriesCheckDuration prometheus.Histogram
+	stateHashLength          prometheus.Gauge
+	stateHashDeletes         prometheus.Counter
+	writeCount               prometheus.Counter
+	readCount                *prometheus.CounterVec
+	memReadDuration          prometheus.Histogram
+	batchProcessDuration     prometheus.Histogram
+	timeseriesCheckDuration  prometheus.Histogram
+	batchProcessDistribution *prometheus.CounterVec
 }
 
 // Config represents the configurable attributes of a Downsampler instance.
@@ -74,17 +77,19 @@ type Config struct {
 	Writer      ingester.Writer
 	Reader      cassandra.Reader
 	Resolution  time.Duration
+	CleanupRate float64
 	CleanupFunc func()
 }
 
 // NewDownsampler returns a new instance of a Downsampler.
 func NewDownsampler(config *Config) *Downsampler {
 	d := &Downsampler{
-		consumer:   config.Consumer,
-		writer:     config.Writer,
-		reader:     config.Reader,
-		resolution: config.Resolution.Nanoseconds() / int64(time.Millisecond),
-		cleanupF:   config.CleanupFunc,
+		consumer:    config.Consumer,
+		writer:      config.Writer,
+		reader:      config.Reader,
+		resolution:  config.Resolution.Nanoseconds() / int64(time.Millisecond),
+		cleanupRate: config.CleanupRate,
+		cleanupF:    config.CleanupFunc,
 
 		lastWrite: map[string]*int64{},
 
@@ -152,6 +157,15 @@ func NewDownsampler(config *Config) *Downsampler {
 				Buckets:   prometheus.DefBuckets,
 			},
 		),
+		batchProcessDistribution: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "batch_process_distribution_seconds",
+				Help:      "distribution of where time is spent when timeseries batches are processed",
+			},
+			[]string{"type"},
+		),
 	}
 
 	return d
@@ -167,6 +181,7 @@ func (d *Downsampler) Describe(ch chan<- *prometheus.Desc) {
 	d.memReadDuration.Describe(ch)
 	d.batchProcessDuration.Describe(ch)
 	d.timeseriesCheckDuration.Describe(ch)
+	d.batchProcessDistribution.Describe(ch)
 }
 
 // Collect implements prometheus.Collector which makes the downsampler
@@ -179,6 +194,7 @@ func (d *Downsampler) Collect(ch chan<- prometheus.Metric) {
 	d.memReadDuration.Collect(ch)
 	d.batchProcessDuration.Collect(ch)
 	d.timeseriesCheckDuration.Collect(ch)
+	d.batchProcessDistribution.Collect(ch)
 }
 
 // Run starts the downsampling process.  Exits with error on first encountered
@@ -236,7 +252,11 @@ func (d *Downsampler) processTSBatch(tsb model.TimeSeriesBatch) error {
 		toWrite = make(model.TimeSeriesBatch, 0)
 		t0      = time.Now()
 	)
-	defer func() { d.batchProcessDuration.Observe(time.Since(t0).Seconds()) }()
+	defer func() {
+		t := time.Since(t0).Seconds()
+		d.batchProcessDuration.Observe(t)
+		d.batchProcessDistribution.WithLabelValues("total").Add(t)
+	}()
 
 	for _, ts := range tsb {
 		should, s, err := d.shouldWrite(ts)
@@ -296,8 +316,10 @@ func (d *Downsampler) shouldWrite(ts *model.TimeSeries) (bool, *model.Sample, er
 }
 
 func (d *Downsampler) write(tsb model.TimeSeriesBatch) error {
+	t0 := time.Now()
 	defer func() {
 		d.writeCount.Add(float64(len(tsb)))
+		d.batchProcessDistribution.WithLabelValues("cassandra_write").Add(time.Since(t0).Seconds())
 		d.updateLastWrites(tsb)
 	}()
 

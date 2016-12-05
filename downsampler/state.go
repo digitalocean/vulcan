@@ -90,6 +90,11 @@ func (d *Downsampler) cleanLastWrite(now int64, diff int64) {
 }
 
 func (d *Downsampler) getLastFrDisk(fqmn string) (updatedAtMS int64, err error) {
+	t0 := time.Now()
+	defer func() {
+		d.batchProcessDistribution.WithLabelValues("cassandra_read").Add(time.Since(t0).Seconds())
+	}()
+
 	d.readCount.WithLabelValues("disk").Inc()
 
 	s, err := d.reader.GetLastSample(fqmn)
@@ -101,17 +106,25 @@ func (d *Downsampler) getLastFrDisk(fqmn string) (updatedAtMS int64, err error) 
 }
 
 // cleanUp sweeps through the downsampler lastWrite state, and removes
-// records older than 1.5X the resolution duration.
+// records older than the configured resolution duration.
 func (d *Downsampler) cleanUp() {
 	var (
-		diffd = time.Duration(d.resolution*3/2) * time.Millisecond
-		t     = time.NewTicker(diffd)
+		diffd = time.Duration(float64(d.resolution)*d.cleanupRate) * time.Millisecond
+		t     = time.NewTicker(2 * diffd)
 		diffi = diffd.Nanoseconds() / int64(time.Millisecond)
+		first = true
 	)
 
 	for {
 		select {
 		case <-t.C:
+			if first {
+				// after first try reset cleanup duration to original configuration.
+				t.Stop()
+				t = time.NewTicker(diffd)
+				first = false
+			}
+
 			d.cleanLastWrite(timeToMS(time.Now()), diffi)
 
 		case <-d.done:

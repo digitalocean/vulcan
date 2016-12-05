@@ -16,10 +16,12 @@ package cassandra
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/digitalocean/vulcan/model"
 
 	"github.com/gocql/gocql"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type stmt string
@@ -37,12 +39,17 @@ type Reader interface {
 	GetLastSample(fqmn string) (*model.Sample, error)
 }
 
-var _ Reader = &Read{}
+var (
+	_ Reader               = &Read{}
+	_ prometheus.Collector = &Read{}
+)
 
 // Read reads records from cassandra.
 type Read struct {
 	session *gocql.Session
 	stmts   map[stmt]string
+
+	readDuration prometheus.Histogram
 }
 
 // ReaderConfig represents the configuration parameters of a Reader instance.
@@ -67,14 +74,38 @@ func NewReader(config *ReaderConfig) Reader {
 	return &Read{
 		session: config.Session,
 		stmts:   preparedStmts,
+
+		readDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "read_duration_seconds",
+				Help:      "Histogram of seconds elapsed to reading from cassandra.",
+				Buckets:   prometheus.DefBuckets,
+			},
+		),
 	}
+}
+
+// Describe implements prometheus.Collector.
+func (r *Read) Describe(ch chan<- *prometheus.Desc) {
+	r.readDuration.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (r *Read) Collect(ch chan<- prometheus.Metric) {
+	r.readDuration.Collect(ch)
 }
 
 // GetLastSample returns the latest recorded sample of the metric.
 // If no metric is found, returned sample will have nil values for its
 // attributes.  The assumption is that the timestamp should never be 0.
 func (r *Read) GetLastSample(fqmn string) (*model.Sample, error) {
-	var s = &model.Sample{}
+	var (
+		s  = &model.Sample{}
+		t0 = time.Now()
+	)
+	defer func() { r.readDuration.Observe(time.Since(t0).Seconds()) }()
 
 	err := r.session.Query(r.stmts[getLastSample], fqmn).Scan(&s.TimestampMS, &s.Value)
 	if err != nil && err != gocql.ErrNotFound {
