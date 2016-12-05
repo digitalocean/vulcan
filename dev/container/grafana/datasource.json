@@ -1,7 +1,0 @@
-{
-  "name":"vulcan",
-  "type":"prometheus",
-  "url":"http://querier:9090",
-  "access":"proxy",
-  "basicAuth":false
-}

@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-docker run -it --net=dev_default --link dev_cassandra_1:cassandra cassandra:2.2.7 cqlsh cassandra
