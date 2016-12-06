@@ -26,6 +26,7 @@ import (
 	cg "github.com/supershabam/sarama-cg"
 )
 
+// ManagerConfig are the necessary components to run a Manager.
 type ManagerConfig struct {
 	Client      sarama.Client
 	Coordinator *cg.Coordinator
@@ -36,6 +37,9 @@ type ManagerConfig struct {
 	TTL         time.Duration
 }
 
+// Manager connects to Kafka and ensures that each topic-partition that we are assigned is being
+// consumed. If we fail to consume, we disconnect from kafka and allow other managers to take
+// over those partitions.
 type Manager struct {
 	cfg              *ManagerConfig
 	maxAge           int64 // max age in milliseconds
