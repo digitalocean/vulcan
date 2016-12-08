@@ -19,11 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digitalocean/vulcan/compressor"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 )
 
-var _ compressor.Flusher = &compressor.Overwriter{}
+var _ Flusher = &Overwriter{}
 
 func makeUtilChunk(start time.Time, targetUtil float64) (chunk.Chunk, time.Time, error) {
 	var value float64

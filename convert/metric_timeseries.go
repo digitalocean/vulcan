@@ -16,8 +16,10 @@ package convert
 
 import (
 	"github.com/digitalocean/vulcan/model"
+	"github.com/golang/protobuf/proto"
 	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 // MetricToTimeSeries converts the prometheus storage metric type to a Vulcan
@@ -53,4 +55,30 @@ func TimeSeriesBatchToMetrics(tsb model.TimeSeriesBatch) []metric.Metric {
 		result[i] = TimeSeriesToMetric(ts)
 	}
 	return result
+}
+
+// ParseTimeSeriesBatch reads bytes into TimeSeriesBatch
+func ParseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
+	wr := &remote.WriteRequest{}
+	if err := proto.Unmarshal(in, wr); err != nil {
+		return nil, err
+	}
+	tsb := make(model.TimeSeriesBatch, 0, len(wr.Timeseries))
+	for _, protots := range wr.Timeseries {
+		ts := &model.TimeSeries{
+			Labels:  map[string]string{},
+			Samples: make([]*model.Sample, 0, len(protots.Samples)),
+		}
+		for _, pair := range protots.Labels {
+			ts.Labels[pair.Name] = pair.Value
+		}
+		for _, protosamp := range protots.Samples {
+			ts.Samples = append(ts.Samples, &model.Sample{
+				TimestampMS: protosamp.TimestampMs,
+				Value:       protosamp.Value,
+			})
+		}
+		tsb = append(tsb, ts)
+	}
+	return tsb, nil
 }

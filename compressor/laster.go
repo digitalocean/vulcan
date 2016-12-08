@@ -14,13 +14,7 @@
 
 package compressor
 
-import (
-	"context"
-
-	"github.com/prometheus/prometheus/storage/local/chunk"
-)
-
-// Flusher persists the datas.
-type Flusher interface {
-	Flush(context.Context, map[string]chunk.Chunk) error
+// Laster is able to return the most recent committed timestamp for an ID.
+type Laster interface {
+	Last(ids []string) (map[string]*int64, error)
 }

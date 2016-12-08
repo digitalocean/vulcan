@@ -16,30 +16,179 @@ package compressor
 
 import (
 	"context"
+	"time"
 
+	"github.com/digitalocean/vulcan/convert"
 	"github.com/digitalocean/vulcan/model"
-	"github.com/golang/protobuf/proto"
+	pmodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local/chunk"
-	"github.com/prometheus/prometheus/storage/remote"
+	cg "github.com/supershabam/sarama-cg"
 )
 
-// CompressorConfig needs these dependencies to operate
-type CompressorConfig struct {
+// Config is needed to create a Compressor.
+type Config struct {
 	Context  context.Context
 	Flusher  Flusher
-	Consumer consumer.Consumer
+	Laster   Laster
+	Consumer cg.Consumer
+	MaxAge   time.Duration
+	MaxIdle  time.Duration
 }
 
 // Compressor is able to take a stream of metrics and flush them in a compressed format.
 // It aims to be resumable.
 type Compressor struct {
-	cfg *CompressorConfig
+	cfg     *Config
+	maxAge  int64
+	maxIdle int64
 }
 
 type chunkLast struct {
 	Chunk  chunk.Chunk
 	MinTS  int64
 	MinOff int64
+}
+
+type acc struct {
+	Chunk chunk.Chunk
+	End   int64
+}
+
+func NewCompressor(cfg *Config) (*Compressor, error) {
+	return &Compressor{
+		cfg:     cfg,
+		maxAge:  cfg.MaxAge.Nanoseconds() / int64(time.Millisecond),
+		maxIdle: cfg.MaxIdle.Nanoseconds() / int64(time.Millisecond),
+	}, nil
+}
+
+func newAcc(end int64) (*acc, error) {
+	c, err := chunk.NewForEncoding(chunk.Varbit)
+	if err != nil {
+		return nil, err
+	}
+	return &acc{
+		Chunk: c,
+		End:   end,
+	}, nil
+}
+
+func (a *acc) append(s *model.Sample) (chunk.Chunk, error) {
+	if s.TimestampMS > a.End {
+		return nil, nil
+	}
+	ps := pmodel.SamplePair{
+		Timestamp: pmodel.Time(s.TimestampMS),
+		Value:     pmodel.SampleValue(s.Value),
+	}
+	chunks, err := a.Chunk.Add(ps)
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) == 1 {
+		a.Chunk = chunks[0]
+		a.End = s.TimestampMS
+		return nil, nil
+	}
+	full := chunks[0]
+	next, err := chunk.NewForEncoding(chunk.Varbit)
+	if err != nil {
+		return nil, err
+	}
+	chunks, _ = next.Add(ps)
+	a.Chunk = chunks[0]
+	a.End = s.TimestampMS
+	return full, nil
+}
+
+func (a *acc) idle(durMS, to int64) bool {
+	return to-a.End > durMS
+}
+
+func (a *acc) old(durMS, to int64) bool {
+	return to-int64(a.Chunk.FirstTime()) > durMS
+}
+
+func (c *Compressor) Run() error {
+	accs := map[string]*acc{}
+	for msg := range c.cfg.Consumer.Consume() {
+		tsb, err := convert.ParseTimeSeriesBatch(msg.Value)
+		if err != nil {
+			return err
+		}
+		if len(tsb) == 0 {
+			continue
+		}
+		// get "now" from timestamp in the payload.
+		var now int64
+	SetNow:
+		for _, ts := range tsb {
+			for _, s := range ts.Samples {
+				now = s.TimestampMS
+				break SetNow
+			}
+		}
+		toFlush := map[string]chunk.Chunk{}
+		// instantiate new accumulators
+		missingIDs := []string{}
+		for _, ts := range tsb {
+			id := ts.ID()
+			if _, ok := accs[id]; !ok {
+				missingIDs = append(missingIDs, id)
+			}
+		}
+		last, err := c.cfg.Laster.Last(missingIDs)
+		if err != nil {
+			return err
+		}
+		for id, t := range last {
+			var end int64
+			if t != nil {
+				end = *t
+			}
+			a, err := newAcc(end)
+			if err != nil {
+				return err
+			}
+			accs[id] = a
+		}
+		// add samples to accumulators
+		for _, ts := range tsb {
+			id := ts.ID()
+			a := accs[id]
+			for _, sample := range ts.Samples {
+				full, err := a.append(sample)
+				if err != nil {
+					return err
+				}
+				if full != nil {
+					toFlush[id] = full
+				}
+			}
+		}
+		// remove idle and old and mark for flushing
+		toRemove := []string{}
+		for id, a := range accs {
+			if a.old(c.maxAge, now) {
+				toRemove = append(toRemove, id)
+				toFlush[id] = a.Chunk
+				continue
+			}
+			if a.idle(c.maxIdle, now) {
+				toRemove = append(toRemove, id)
+				toFlush[id] = a.Chunk
+			}
+		}
+		for _, id := range toRemove {
+			delete(accs, id)
+		}
+		err = c.cfg.Flusher.Flush(c.cfg.Context, toFlush)
+		if err != nil {
+			return err
+		}
+
+	}
+	return c.cfg.Consumer.Err()
 }
 
 func (c *Compressor) consume(ctx context.Context, topic string, partition int32) error {
@@ -199,74 +348,4 @@ func (c *Compressor) consume(ctx context.Context, topic string, partition int32)
 	// 	}
 	// }
 	// return cr.Err()
-}
-
-func (c *Compressor) flush(flush map[string][]chunk.Chunk) error {
-	for id, chunks := range flush {
-		for _, chnk := range chunks {
-			err := c.write(id, chnk)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Compressor) write(id string, chnk chunk.Chunk) error {
-	return nil
-	// end, err := chnk.NewIterator().LastTimestamp()
-	// if err != nil {
-	// 	return err
-	// }
-	// // TODO is it possible to marshal a resized and fully utilized chunk? As-is, chunks are always 1024 bytes.
-	// buf := make([]byte, chunk.ChunkLen)
-	// err = chnk.MarshalToBuf(buf)
-	// if err != nil {
-	// 	return err
-	// }
-	// sql := `UPDATE compressedtest USING TTL ? SET value = ? WHERE id = ? AND end = ?`
-	// c.flushUtilization.Observe(chnk.Utilization())
-	// t0 := time.Now()
-	// err = c.cfg.Session.Query(sql, c.ttl, buf, id, end).Exec()
-	// c.writeDuration.Observe(time.Since(t0).Seconds())
-	// return err
-}
-
-func (c *Compressor) lastTime(id string) (int64, error) {
-	return 0, nil
-	// sql := `SELECT end FROM compressedtest WHERE id = ? ORDER BY end DESC LIMIT 1`
-	// var end int64
-	// t0 := time.Now()
-	// err := c.cfg.Session.Query(sql, id).Scan(&end)
-	// c.fetchDuration.Observe(time.Since(t0).Seconds())
-	// if err == gocql.ErrNotFound {
-	// 	return 0, nil
-	// }
-	// return end, err
-}
-
-func parseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
-	wr := &remote.WriteRequest{}
-	if err := proto.Unmarshal(in, wr); err != nil {
-		return nil, err
-	}
-	tsb := make(model.TimeSeriesBatch, 0, len(wr.Timeseries))
-	for _, protots := range wr.Timeseries {
-		ts := &model.TimeSeries{
-			Labels:  map[string]string{},
-			Samples: make([]*model.Sample, 0, len(protots.Samples)),
-		}
-		for _, pair := range protots.Labels {
-			ts.Labels[pair.Name] = pair.Value
-		}
-		for _, protosamp := range protots.Samples {
-			ts.Samples = append(ts.Samples, &model.Sample{
-				TimestampMS: protosamp.TimestampMs,
-				Value:       protosamp.Value,
-			})
-		}
-		tsb = append(tsb, ts)
-	}
-	return tsb, nil
 }

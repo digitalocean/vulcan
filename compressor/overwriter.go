@@ -20,31 +20,9 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gocql/gocql"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 )
-
-// Overwriter attemps to pack the most samples per byte into Cassandra. Because
-// we have to flush varbit encoded data to cassanddra based on time, we are often
-// flushing 1k varbit blocks that have space left for more samples. Using the overwriter,
-// we read the last varbit block in the database to see if we can further compress datapoints
-// into that block. This causes tombstones in cassandra, but should be compacted away after
-// an early few compaction cycles. This seems worth it to get better compaction. In an attempt
-// to make sure we don't cause compaction in Cassandra for data that is too old and already
-// compacted into large sstables we no longer want to alter, we can set a time threshold that
-// won't attempt to recompact blocks older than that threshold.
-type Overwriter struct {
-	s         *gocql.Session
-	lastSQL   string
-	upsertSQL string
-}
-
-type OverwriterConfig struct {
-	Session *gocql.Session
-	Table   string
-	TTL     time.Duration
-}
 
 type lastSQLVars struct {
 	Table string
@@ -68,6 +46,34 @@ VALUES (?, ?, ?)
 USING TTL {{.TTL}}`
 )
 
+// Overwriter attemps to pack the most samples per byte into Cassandra. Because
+// we have to flush varbit encoded data to cassanddra based on time, we are often
+// flushing 1k varbit blocks that have space left for more samples. Using the overwriter,
+// we read the last varbit block in the database to see if we can further compress datapoints
+// into that block. This causes tombstones in cassandra, but should be compacted away after
+// an early few compaction cycles. This seems worth it to get better compaction. In an attempt
+// to make sure we don't cause compaction in Cassandra for data that is too old and already
+// compacted into large sstables we no longer want to alter, we can set a time threshold that
+// won't attempt to recompact blocks older than that threshold.
+type Overwriter struct {
+	cfg       *OverwriterConfig
+	s         *gocql.Session
+	work      chan *work
+	lastSQL   string
+	upsertSQL string
+}
+
+// OverwriterConfig is needed to create an Overwriter.
+type OverwriterConfig struct {
+	Context context.Context
+	Session *gocql.Session
+	Table   string
+	TTL     time.Duration
+	Workers int
+}
+
+// NewOverwriter is able to flush chunks to cassandra and attempts to compact existing
+// data into more compact chunks.
 func NewOverwriter(cfg *OverwriterConfig) (*Overwriter, error) {
 	lastSQLBuf := bytes.NewBuffer(make([]byte, 0))
 	t, err := template.New("lastSQL").Parse(lastSQL)
@@ -92,17 +98,48 @@ func NewOverwriter(cfg *OverwriterConfig) (*Overwriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	spew.Dump(lastSQLBuf.String())
-	spew.Dump(upsertSQLBuf.String())
-	return &Overwriter{
+	o := &Overwriter{
+		cfg:       cfg,
 		s:         cfg.Session,
+		work:      make(chan *work),
 		lastSQL:   lastSQLBuf.String(),
 		upsertSQL: upsertSQLBuf.String(),
-	}, nil
+	}
+	for i := 0; i < cfg.Workers; i++ {
+		go o.worker()
+	}
+	return o, nil
 }
 
-// Flush does the thing.
-func (o *Overwriter) Flush(ctx context.Context, id string, c chunk.Chunk) error {
+type work struct {
+	Context context.Context
+	ID      string
+	Chunk   chunk.Chunk
+	Return  chan<- error
+}
+
+// Flush concurrently writes the provided chunks to cassandra.
+func (o *Overwriter) Flush(ctx context.Context, chunks map[string]chunk.Chunk) error {
+	ch := make(chan error, len(chunks))
+	for id, c := range chunks {
+		o.work <- &work{
+			Chunk:   c,
+			Context: ctx,
+			ID:      id,
+			Return:  ch,
+		}
+	}
+	for i := 0; i < len(chunks); i++ {
+		err := <-ch
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Flush writes an individual chunk to cassandra.
+func (o *Overwriter) flush(ctx context.Context, id string, c chunk.Chunk) error {
 	last, err := o.last(ctx, id)
 	if err != nil {
 		return err
@@ -123,6 +160,17 @@ func (o *Overwriter) Flush(ctx context.Context, id string, c chunk.Chunk) error 
 		}
 	}
 	return nil
+}
+
+func (o *Overwriter) worker() {
+	for {
+		select {
+		case <-o.cfg.Context.Done():
+			return
+		case w := <-o.work:
+			w.Return <- o.flush(w.Context, w.ID, w.Chunk)
+		}
+	}
 }
 
 func compact(chunks []chunk.Chunk) ([]chunk.Chunk, error) {
