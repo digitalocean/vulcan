@@ -16,6 +16,7 @@ package compressor
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/prometheus/client_golang/prometheus"
 	cg "github.com/supershabam/sarama-cg"
+	"github.com/supershabam/sarama-cg/consumer"
 )
 
 // ManagerConfig are the necessary components to run a Manager.
@@ -53,8 +55,10 @@ type Manager struct {
 	writeDuration    prometheus.Summary
 }
 
+// NewManager creates a Manager which will ensure that the compressor consumes its
+// fair share of partitions and processes them.
 func NewManager(cfg *ManagerConfig) (*Manager, error) {
-	return &Compressor{
+	return &Manager{
 		cfg:     cfg,
 		maxAge:  int64(cfg.MaxAge.Seconds()),
 		maxIdle: int64(cfg.MaxIdle.Seconds()),
@@ -123,19 +127,18 @@ func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	m.writeDuration.Collect(ch)
 }
 
+// Run executes until completion or error.
 func (m *Manager) Run() error {
 	return m.cfg.Coordinator.Run(m.handle)
 }
 
 func (m *Manager) handle(ctx context.Context, topic string, partition int32) {
-	if partition != 2 {
-		return
-	}
 	log := logrus.WithFields(logrus.Fields{
 		"topic":     topic,
 		"partition": partition,
 	})
 	log.Info("taking control of topic-partition")
+	defer log.Info("relenquishing control of topic-partition")
 	count := 0
 	backoff := time.NewTimer(time.Duration(0))
 	for {
@@ -144,20 +147,53 @@ func (m *Manager) handle(ctx context.Context, topic string, partition int32) {
 		case <-ctx.Done():
 			return
 		case <-backoff.C:
-			c := NewCompressor(&CompressorConfig{
-				Context:   ctx,
-				Topic:     topic,
-				Partition: partition,
-			})
-			err := c.consume(ctx, topic, partition)
-			if err == nil {
-				logrus.WithFields(logrus.Fields{
-					"topic":     topic,
-					"partition": partition,
-				}).Info("relenquishing control of topic-partition")
-				return
+			// TODO set dur on exit so we can retry
+			log.Info("consuming topic-partition")
+			// TODO put this offset logic into kafka consumer
+			b, err := m.cfg.Client.Coordinator(m.cfg.GroupID)
+			if err != nil {
+				log.WithError(err).Error("while getting group coordinator to get offset")
+				continue
 			}
-			panic(err)
+			req := &sarama.OffsetFetchRequest{
+				ConsumerGroup: m.cfg.GroupID,
+				Version:       1,
+			}
+			req.AddPartition(topic, partition)
+			resp, err := b.FetchOffset(req)
+			if err != nil && err != sarama.ErrNoError {
+				log.WithError(err).Error("while getting offset")
+				continue
+			}
+			block := resp.GetBlock(topic, partition)
+			if block == nil {
+				err = errors.New("expected to get offset block")
+				log.WithError(err).Error("expected to get offset block")
+				continue
+			}
+			c, err := consumer.NewOffset(&consumer.OffsetConfig{
+				CacheDuration: time.Second,
+				Client:        m.cfg.Client,
+				Context:       ctx,
+				Coordinator:   m.cfg.Coordinator,
+				Offset:        block.Offset,
+				Partition:     partition,
+				Topic:         topic,
+			})
+			if err != nil {
+				log.WithError(err).Error("while creating consumer")
+				continue
+			}
+			cmpr, err := NewCompressor(&CompressorConfig{
+				Consumer: c,
+				Context:  ctx,
+			})
+			if err != nil {
+				log.WithError(err).Error("while createing compressor")
+				continue
+			}
+			cmpr.Run()
+
 			// exponential backoff with cap at 10m
 			dur := time.Duration(math.Min(float64(time.Minute*10), float64(100*time.Millisecond)*math.Pow(float64(2), float64(count))))
 			logrus.WithFields(logrus.Fields{

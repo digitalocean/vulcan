@@ -14,9 +14,13 @@
 
 package compressor
 
-import "github.com/prometheus/prometheus/storage/local/chunk"
+import (
+	"context"
+
+	"github.com/prometheus/prometheus/storage/local/chunk"
+)
 
 // Flusher persists the datas.
 type Flusher interface {
-	Flush(id string, chunk chunk.Chunk) error
+	Flush(context.Context, map[string][]chunk.Chunk) error
 }

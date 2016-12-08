@@ -16,22 +16,18 @@ package compressor
 
 import (
 	"context"
-	"strconv"
-	"sync"
-	"time"
 
 	"github.com/digitalocean/vulcan/model"
-	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/supershabam/sarama-cg/consumer"
 )
 
+// CompressorConfig needs these dependencies to operate
 type CompressorConfig struct {
-	Context         context.Context
-	Consumer        Consumer
-	LastTimestamper LastTimestamper
+	Context  context.Context
+	Flusher  Flusher
+	Consumer consumer.Consumer
 }
 
 // Compressor is able to take a stream of metrics and flush them in a compressed format.
@@ -47,161 +43,162 @@ type chunkLast struct {
 }
 
 func (c *Compressor) consume(ctx context.Context, topic string, partition int32) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel() // ensure consumer context is canceled nomatter why we exit this function.
-	partitionStr := strconv.FormatInt(int64(partition), 10)
-	defer func() {
-		c.highwatermark.DeleteLabelValues(topic, partitionStr)
-		c.offset.DeleteLabelValues(topic, partitionStr)
-		c.samplesTotal.DeleteLabelValues(topic, partitionStr)
-	}()
-	cr, err := consumer.NewTimeWindow(&consumer.TimeWindowConfig{
-		CacheDuration: time.Second,
-		Client:        c.cfg.Client,
-		Coordinator:   c.cfg.Coordinator,
-		Context:       ctx,
-		Partition:     partition,
-		Start:         consumer.OffsetGroup,
-		Topic:         topic,
-		Window:        c.cfg.MaxAge * 2,
-	})
-	if err != nil {
-		return err
-	}
-	acc := map[string]*chunkLast{}
-	// iterate through messages from this partition in-order committing the offset upon completion.
-	for msg := range cr.Consume() {
-		msgt := msg.Timestamp.UnixNano() / int64(time.Millisecond)
-		c.highwatermark.WithLabelValues(topic, partitionStr).Set(float64(cr.HighWaterMarkOffset()))
-		c.offset.WithLabelValues(topic, partitionStr).Set(float64(msg.Offset))
-		flush := map[string][]chunk.Chunk{}
-		tsb, err := parseTimeSeriesBatch(msg.Value)
-		if err != nil {
-			return err
-		}
-		// handle any new ids including fetching from DB their last timestamp.
-		newids := []string{}
-		for _, ts := range tsb {
-			id := ts.ID()
-			if _, ok := acc[id]; !ok {
-				newids = append(newids, id)
-			}
-		}
-		wg := &sync.WaitGroup{}
-		l := &sync.Mutex{}
-		var outerErr error
-		wg.Add(len(newids))
-		for _, id := range newids {
-			go func(id string) {
-				defer wg.Done()
-				chnk, err := chunk.NewForEncoding(chunk.Varbit)
-				if err != nil {
-					outerErr = err
-					return
-				}
-				last, err := c.lastTime(id)
-				if err != nil {
-					outerErr = err
-					return
-				}
-				l.Lock()
-				acc[id] = &chunkLast{
-					Chunk: chnk,
-					MinTS: last,
-				}
-				l.Unlock()
-			}(id)
-		}
-		wg.Wait()
-		if outerErr != nil {
-			return err
-		}
-		for _, ts := range tsb {
-			id := ts.ID()
-			for _, s := range ts.Samples {
-				cl := acc[id]
-				// don't process samples that have already been persisted.
-				if s.TimestampMS < cl.MinTS {
-					continue
-				}
-				next, err := cl.Chunk.Add(pmodel.SamplePair{
-					Timestamp: pmodel.Time(s.TimestampMS),
-					Value:     pmodel.SampleValue(s.Value),
-				})
-				if err != nil {
-					return err
-				}
-				// if added sample to chunk without overflow
-				if len(next) == 1 {
-					acc[id].Chunk = next[0]
-					continue
-				}
-				if len(next) != 2 {
-					panic("appending a sample to chunk should always result in a 1 or 2 element slice")
-				}
-				// chunk overflowed and we need to flush the full chunk.
-				if _, ok := flush[id]; !ok {
-					flush[id] = make([]chunk.Chunk, 0, 1)
-				}
-				flush[id] = append(flush[id], next[0])
-				// write overflow samples to new varbit chunk
-				iter := next[1].NewIterator()
-				chnk, err := chunk.NewForEncoding(chunk.Varbit)
-				if err != nil {
-					return err
-				}
-				next[0] = chnk
-				for iter.Scan() {
-					n, err := next[0].Add(iter.Value())
-					if err != nil {
-						return err
-					}
-					if len(n) != 1 {
-						panic("expected overflow samples to fit into new varbit chunk")
-					}
-					next = n
-				}
-			}
-			c.samplesTotal.WithLabelValues(topic, partitionStr).Add(float64(len(ts.Samples)))
-		}
-		oldids := []string{}
-		for id, cl := range acc {
-			t := int64(cl.Chunk.FirstTime())
-			if msgt-t > c.maxAge {
-				if _, ok := flush[id]; !ok {
-					flush[id] = make([]chunk.Chunk, 0, 1)
-				}
-				flush[id] = append(flush[id], cl.Chunk)
-				oldids = append(oldids, id)
-				continue
-			}
-			last, err := cl.Chunk.NewIterator().LastTimestamp()
-			if err != nil {
-				return err
-			}
-			if msgt-int64(last) > c.maxIdle {
-				if _, ok := flush[id]; !ok {
-					flush[id] = make([]chunk.Chunk, 0, 1)
-				}
-				flush[id] = append(flush[id], cl.Chunk)
-				oldids = append(oldids, id)
-			}
-		}
-		for _, id := range oldids {
-			delete(acc, id)
-		}
-		// TODO keep to-flush in memory and don't call commit offset each time; instead call commit offset
-		// once the in-memory buffer has been flushed (but not on each message read)
-		err = c.flush(flush)
-		if err != nil {
-			return err
-		}
-		err = cr.CommitOffset(msg.Offset)
-		if err != nil {
-			return err
-		}
-	}
-	return cr.Err()
+	return nil
+	// ctx, cancel := context.WithCancel(ctx)
+	// defer cancel() // ensure consumer context is canceled nomatter why we exit this function.
+	// partitionStr := strconv.FormatInt(int64(partition), 10)
+	// defer func() {
+	// 	c.highwatermark.DeleteLabelValues(topic, partitionStr)
+	// 	c.offset.DeleteLabelValues(topic, partitionStr)
+	// 	c.samplesTotal.DeleteLabelValues(topic, partitionStr)
+	// }()
+	// cr, err := consumer.NewTimeWindow(&consumer.TimeWindowConfig{
+	// 	CacheDuration: time.Second,
+	// 	Client:        c.cfg.Client,
+	// 	Coordinator:   c.cfg.Coordinator,
+	// 	Context:       ctx,
+	// 	Partition:     partition,
+	// 	Start:         consumer.OffsetGroup,
+	// 	Topic:         topic,
+	// 	Window:        c.cfg.MaxAge * 2,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
+	// acc := map[string]*chunkLast{}
+	// // iterate through messages from this partition in-order committing the offset upon completion.
+	// for msg := range cr.Consume() {
+	// 	msgt := msg.Timestamp.UnixNano() / int64(time.Millisecond)
+	// 	c.highwatermark.WithLabelValues(topic, partitionStr).Set(float64(cr.HighWaterMarkOffset()))
+	// 	c.offset.WithLabelValues(topic, partitionStr).Set(float64(msg.Offset))
+	// 	flush := map[string][]chunk.Chunk{}
+	// 	tsb, err := parseTimeSeriesBatch(msg.Value)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	// handle any new ids including fetching from DB their last timestamp.
+	// 	newids := []string{}
+	// 	for _, ts := range tsb {
+	// 		id := ts.ID()
+	// 		if _, ok := acc[id]; !ok {
+	// 			newids = append(newids, id)
+	// 		}
+	// 	}
+	// 	wg := &sync.WaitGroup{}
+	// 	l := &sync.Mutex{}
+	// 	var outerErr error
+	// 	wg.Add(len(newids))
+	// 	for _, id := range newids {
+	// 		go func(id string) {
+	// 			defer wg.Done()
+	// 			chnk, err := chunk.NewForEncoding(chunk.Varbit)
+	// 			if err != nil {
+	// 				outerErr = err
+	// 				return
+	// 			}
+	// 			last, err := c.lastTime(id)
+	// 			if err != nil {
+	// 				outerErr = err
+	// 				return
+	// 			}
+	// 			l.Lock()
+	// 			acc[id] = &chunkLast{
+	// 				Chunk: chnk,
+	// 				MinTS: last,
+	// 			}
+	// 			l.Unlock()
+	// 		}(id)
+	// 	}
+	// 	wg.Wait()
+	// 	if outerErr != nil {
+	// 		return err
+	// 	}
+	// 	for _, ts := range tsb {
+	// 		id := ts.ID()
+	// 		for _, s := range ts.Samples {
+	// 			cl := acc[id]
+	// 			// don't process samples that have already been persisted.
+	// 			if s.TimestampMS < cl.MinTS {
+	// 				continue
+	// 			}
+	// 			next, err := cl.Chunk.Add(pmodel.SamplePair{
+	// 				Timestamp: pmodel.Time(s.TimestampMS),
+	// 				Value:     pmodel.SampleValue(s.Value),
+	// 			})
+	// 			if err != nil {
+	// 				return err
+	// 			}
+	// 			// if added sample to chunk without overflow
+	// 			if len(next) == 1 {
+	// 				acc[id].Chunk = next[0]
+	// 				continue
+	// 			}
+	// 			if len(next) != 2 {
+	// 				panic("appending a sample to chunk should always result in a 1 or 2 element slice")
+	// 			}
+	// 			// chunk overflowed and we need to flush the full chunk.
+	// 			if _, ok := flush[id]; !ok {
+	// 				flush[id] = make([]chunk.Chunk, 0, 1)
+	// 			}
+	// 			flush[id] = append(flush[id], next[0])
+	// 			// write overflow samples to new varbit chunk
+	// 			iter := next[1].NewIterator()
+	// 			chnk, err := chunk.NewForEncoding(chunk.Varbit)
+	// 			if err != nil {
+	// 				return err
+	// 			}
+	// 			next[0] = chnk
+	// 			for iter.Scan() {
+	// 				n, err := next[0].Add(iter.Value())
+	// 				if err != nil {
+	// 					return err
+	// 				}
+	// 				if len(n) != 1 {
+	// 					panic("expected overflow samples to fit into new varbit chunk")
+	// 				}
+	// 				next = n
+	// 			}
+	// 		}
+	// 		c.samplesTotal.WithLabelValues(topic, partitionStr).Add(float64(len(ts.Samples)))
+	// 	}
+	// 	oldids := []string{}
+	// 	for id, cl := range acc {
+	// 		t := int64(cl.Chunk.FirstTime())
+	// 		if msgt-t > c.maxAge {
+	// 			if _, ok := flush[id]; !ok {
+	// 				flush[id] = make([]chunk.Chunk, 0, 1)
+	// 			}
+	// 			flush[id] = append(flush[id], cl.Chunk)
+	// 			oldids = append(oldids, id)
+	// 			continue
+	// 		}
+	// 		last, err := cl.Chunk.NewIterator().LastTimestamp()
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		if msgt-int64(last) > c.maxIdle {
+	// 			if _, ok := flush[id]; !ok {
+	// 				flush[id] = make([]chunk.Chunk, 0, 1)
+	// 			}
+	// 			flush[id] = append(flush[id], cl.Chunk)
+	// 			oldids = append(oldids, id)
+	// 		}
+	// 	}
+	// 	for _, id := range oldids {
+	// 		delete(acc, id)
+	// 	}
+	// 	// TODO keep to-flush in memory and don't call commit offset each time; instead call commit offset
+	// 	// once the in-memory buffer has been flushed (but not on each message read)
+	// 	err = c.flush(flush)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	err = cr.CommitOffset(msg.Offset)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
+	// return cr.Err()
 }
 
 func (c *Compressor) flush(flush map[string][]chunk.Chunk) error {
@@ -217,34 +214,36 @@ func (c *Compressor) flush(flush map[string][]chunk.Chunk) error {
 }
 
 func (c *Compressor) write(id string, chnk chunk.Chunk) error {
-	end, err := chnk.NewIterator().LastTimestamp()
-	if err != nil {
-		return err
-	}
-	// TODO is it possible to marshal a resized and fully utilized chunk? As-is, chunks are always 1024 bytes.
-	buf := make([]byte, chunk.ChunkLen)
-	err = chnk.MarshalToBuf(buf)
-	if err != nil {
-		return err
-	}
-	sql := `UPDATE compressedtest USING TTL ? SET value = ? WHERE id = ? AND end = ?`
-	c.flushUtilization.Observe(chnk.Utilization())
-	t0 := time.Now()
-	err = c.cfg.Session.Query(sql, c.ttl, buf, id, end).Exec()
-	c.writeDuration.Observe(time.Since(t0).Seconds())
-	return err
+	return nil
+	// end, err := chnk.NewIterator().LastTimestamp()
+	// if err != nil {
+	// 	return err
+	// }
+	// // TODO is it possible to marshal a resized and fully utilized chunk? As-is, chunks are always 1024 bytes.
+	// buf := make([]byte, chunk.ChunkLen)
+	// err = chnk.MarshalToBuf(buf)
+	// if err != nil {
+	// 	return err
+	// }
+	// sql := `UPDATE compressedtest USING TTL ? SET value = ? WHERE id = ? AND end = ?`
+	// c.flushUtilization.Observe(chnk.Utilization())
+	// t0 := time.Now()
+	// err = c.cfg.Session.Query(sql, c.ttl, buf, id, end).Exec()
+	// c.writeDuration.Observe(time.Since(t0).Seconds())
+	// return err
 }
 
 func (c *Compressor) lastTime(id string) (int64, error) {
-	sql := `SELECT end FROM compressedtest WHERE id = ? ORDER BY end DESC LIMIT 1`
-	var end int64
-	t0 := time.Now()
-	err := c.cfg.Session.Query(sql, id).Scan(&end)
-	c.fetchDuration.Observe(time.Since(t0).Seconds())
-	if err == gocql.ErrNotFound {
-		return 0, nil
-	}
-	return end, err
+	return 0, nil
+	// sql := `SELECT end FROM compressedtest WHERE id = ? ORDER BY end DESC LIMIT 1`
+	// var end int64
+	// t0 := time.Now()
+	// err := c.cfg.Session.Query(sql, id).Scan(&end)
+	// c.fetchDuration.Observe(time.Since(t0).Seconds())
+	// if err == gocql.ErrNotFound {
+	// 	return 0, nil
+	// }
+	// return end, err
 }
 
 func parseTimeSeriesBatch(in []byte) (model.TimeSeriesBatch, error) {
