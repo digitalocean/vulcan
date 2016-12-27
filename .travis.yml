@@ -9,7 +9,9 @@ go:
   - 1.7.4
 
 before_install:
-  - ci/install-docker-compose
+  - ci/setup-docker-compose
+  - ci/setup-docker-network
+  - ci/setup-dbs
 
 cache:
   directories:

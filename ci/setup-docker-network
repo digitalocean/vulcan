@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -ex
+
+docker network inspect ci_vulcan > /dev/null || docker network create ci_vulcan

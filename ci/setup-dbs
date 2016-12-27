@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# need script dir path to link volumes with docker command
+function abs_script_dir_path {
+    SOURCE=$(if [ -z "${BASH_SOURCE[0]}"]; then echo $1; else echo ${BASH_SOURCE[0]}; fi)
+    while [ -h "$SOURCE" ]; do
+      DIR=$( cd -P $( dirname "$SOURCE") && pwd )
+      SOURCE=$(readlink "$SOURCE")
+      [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+    done
+    DIR=$( cd -P $( dirname "$SOURCE" ) && pwd )
+    echo $DIR
+}
+script_dir=$(abs_script_dir_path $0)
+
+set -ex
+
+docker-compose up -d zk
+docker run --network ci_vulcan dadarek/wait-for-dependencies:0.1 zk:2181
+
+docker-compose up -d kafka
+docker run --network ci_vulcan dadarek/wait-for-dependencies:0.1 kafka:9092
+docker run --network ci_vulcan ches/kafka:0.10.1.0 kafka-topics.sh --create \
+  --topic vulcan-ci \
+  --replication-factor 1 \
+  --partitions 48 \
+  --zookeeper zk:2181
+
+docker-compose up -d cassandra
+docker run --network ci_vulcan dadarek/wait-for-dependencies:0.1 cassandra:9042
+docker run -v $script_dir/setup.cql:/tmp/setup.cql --network ci_vulcan cassandra:3.0.10 cqlsh cassandra -f /tmp/setup.cql
