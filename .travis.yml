@@ -8,11 +8,8 @@ language: go
 go:
   - 1.7.4
 
-env:
-  DOCKER_COMPOSE_VERSION: 1.9.0
-
 before_install:
-  - docker-compose version
+  - ci/install-docker-compose
 
 cache:
   directories:
