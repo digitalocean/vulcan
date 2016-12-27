@@ -109,6 +109,67 @@ func (a *acc) old(durMS, to int64) bool {
 	return to-int64(a.Chunk.FirstTime()) > durMS
 }
 
+func (c *Compressor) now(tsb model.TimeSeriesBatch) int64 {
+	// get first "now" from timestamp in the payload.
+	for _, ts := range tsb {
+		for _, s := range ts.Samples {
+			return s.TimestampMS
+		}
+	}
+	return 0
+}
+
+func (c *Compressor) initMissingAccs(tsb model.TimeSeriesBatch, accs map[string]*acc) error {
+	missing := []string{}
+	for _, ts := range tsb {
+		id := ts.ID()
+		if _, ok := accs[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	last, err := c.cfg.Laster.Last(missing)
+	if err != nil {
+		return err
+	}
+	for id, t := range last {
+		var end int64
+		if t != nil {
+			end = *t
+		}
+		a, err := newAcc(end)
+		if err != nil {
+			return err
+		}
+		accs[id] = a
+	}
+	return nil
+}
+
+func (c *Compressor) expired(now int64, accs map[string]*acc) []string {
+	e := []string{}
+	for id, a := range accs {
+		if a.old(c.maxAge, now) {
+			e = append(e, id)
+			continue
+		}
+		if a.idle(c.maxIdle, now) {
+			e = append(e, id)
+		}
+	}
+	return e
+}
+
+func (c *Compressor) append(tsb model.TimeSeriesBatch, accs map[string]*acc) (full map[string]chunk.Chunk) {
+	full = make(map[string]chunk.Chunk)
+	for _, ts := range tsb {
+		id := ts.ID()
+		a := accs[id]
+		// for _,
+	}
+	return full
+}
+
+// Run executes until completion or error.
 func (c *Compressor) Run() error {
 	accs := map[string]*acc{}
 	for msg := range c.cfg.Consumer.Consume() {
@@ -116,41 +177,11 @@ func (c *Compressor) Run() error {
 		if err != nil {
 			return err
 		}
-		if len(tsb) == 0 {
-			continue
-		}
-		// get "now" from timestamp in the payload.
-		var now int64
-	SetNow:
-		for _, ts := range tsb {
-			for _, s := range ts.Samples {
-				now = s.TimestampMS
-				break SetNow
-			}
-		}
+		now := c.now(tsb)
 		toFlush := map[string]chunk.Chunk{}
-		// instantiate new accumulators
-		missingIDs := []string{}
-		for _, ts := range tsb {
-			id := ts.ID()
-			if _, ok := accs[id]; !ok {
-				missingIDs = append(missingIDs, id)
-			}
-		}
-		last, err := c.cfg.Laster.Last(missingIDs)
+		err = c.initMissingAccs(tsb, accs)
 		if err != nil {
 			return err
-		}
-		for id, t := range last {
-			var end int64
-			if t != nil {
-				end = *t
-			}
-			a, err := newAcc(end)
-			if err != nil {
-				return err
-			}
-			accs[id] = a
 		}
 		// add samples to accumulators
 		for _, ts := range tsb {
@@ -166,27 +197,15 @@ func (c *Compressor) Run() error {
 				}
 			}
 		}
-		// remove idle and old and mark for flushing
-		toRemove := []string{}
-		for id, a := range accs {
-			if a.old(c.maxAge, now) {
-				toRemove = append(toRemove, id)
-				toFlush[id] = a.Chunk
-				continue
-			}
-			if a.idle(c.maxIdle, now) {
-				toRemove = append(toRemove, id)
-				toFlush[id] = a.Chunk
-			}
-		}
-		for _, id := range toRemove {
+		expired := c.expired(now, accs)
+		for _, id := range expired {
+			toFlush[id] = accs[id].Chunk
 			delete(accs, id)
 		}
 		err = c.cfg.Flusher.Flush(c.cfg.Context, toFlush)
 		if err != nil {
 			return err
 		}
-
 	}
 	return c.cfg.Consumer.Err()
 }
