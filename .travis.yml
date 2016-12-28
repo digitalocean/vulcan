@@ -9,7 +9,9 @@ go:
   - 1.7.4
 
 before_install:
-  - ci/setup-docker-compose
+  - ci/install-docker-compose
+  - ci/install-glide
+  - ci/install-golint
   - ci/setup-docker-network
   - ci/setup-dbs
 
