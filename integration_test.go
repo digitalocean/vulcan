@@ -19,6 +19,7 @@ package main_test
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"testing"
 
@@ -53,7 +54,11 @@ func TestPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rc.Close()
+	// wait until image is pulled.
+	_, err = ioutil.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	body, err := cli.ContainerCreate(ctx, &container.Config{
 		ExposedPorts: nat.PortSet{
 			"2181/tcp": struct{}{},
