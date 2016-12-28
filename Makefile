@@ -7,12 +7,12 @@ VENDOR_SRCS = $(shell find vendor -type f -iname '*.go')
 # lazy eval for SRC_FULL for any file that should be included in the src-full tarball
 SRC_FULL = $(shell find . -type f -not -path './target/*' -not -path './.*')
 
-.PHONY: all bin clean docker licensecheck lint push tar test vendor vet
+.PHONY: all bin clean docker integration licensecheck lint push source tar test vendor vet
 
 ###
 # phony targets
 
-all: tar
+all: bin
 
 bin: target/vulcan_linux_amd64
 
@@ -26,6 +26,10 @@ clean:
 
 docker: .makecache/docker
 
+integration:
+	@echo ">> running integration tests..."
+	@echo "TODO"
+
 licensecheck:
 	@echo ">> checking for license"
 	@scripts/licensecheck
@@ -38,7 +42,9 @@ push: .makecache/docker
 	@echo ">> pushing docker image dovulcan/vulcan:$(GIT_SUMMARY)"
 	@docker push dovulcan/vulcan:$(GIT_SUMMARY)
 
-tar: target/vulcan-$(GIT_SUMMARY).linux-amd64.tar.gz target/vulcan-$(GIT_SUMMARY).src-full.tar.gz
+source: target/vulcan-$(GIT_SUMMARY).src-full.tar.gz
+
+tar: target/vulcan-$(GIT_SUMMARY).linux-amd64.tar.gz
 
 test: vendor
 	@echo ">> running tests"
@@ -95,4 +101,5 @@ target/vulcan-$(GIT_SUMMARY).linux-amd64.tar.gz: target/vulcan_linux_amd64 LICEN
 
 target/vulcan-$(GIT_SUMMARY).src-full.tar.gz: $(SRC_FULL)
 	@echo ">> creating tarball $@"
+# TODO -s works on osx but on gnu tar --transform should be used
 	@tar -zc --exclude='./target/' --exclude='./.*' -s '/^\./vulcan-$(GIT_SUMMARY).src-full/' -f $@ .
