@@ -49,6 +49,11 @@ func TestPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	spew.Dump(containers)
+	rc, err := cli.ImagePull(ctx, "zookeeper:3.4.9", types.ImagePullOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.Close()
 	body, err := cli.ContainerCreate(ctx, &container.Config{
 		ExposedPorts: nat.PortSet{
 			"2181/tcp": struct{}{},
