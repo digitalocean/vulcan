@@ -9,11 +9,11 @@ go:
   - 1.7.4
 
 before_install:
-  - make test
-  - make bin
   - ci/install-docker-compose
   - ci/install-glide
   - ci/install-golint
+  - make test
+  - make bin
   - ci/setup-docker-network
   - ci/setup-dbs
   - make integration
