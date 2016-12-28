@@ -2,7 +2,7 @@
 
 # need script dir path to link volumes with docker command
 function abs_script_dir_path {
-    SOURCE=$(if [ -z "${BASH_SOURCE[0]}"]; then echo $1; else echo ${BASH_SOURCE[0]}; fi)
+    SOURCE=$(if [ -z "${BASH_SOURCE[0]}" ]; then echo $1; else echo ${BASH_SOURCE[0]}; fi)
     while [ -h "$SOURCE" ]; do
       DIR=$( cd -P $( dirname "$SOURCE") && pwd )
       SOURCE=$(readlink "$SOURCE")
