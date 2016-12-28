@@ -1,5 +1,5 @@
-hash: cdd1cbe261ba8978e8f2eb776c327dd030c3299b9a2e175d2278a01015dcf542
-updated: 2016-11-21T11:43:13.12435671-07:00
+hash: 33bda9380e3f0c0b377c349cf828de8bd23d8ddaae27cd8c388d3f3fa52f8dca
+updated: 2016-12-28T14:32:37.531484798-03:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -52,6 +52,32 @@ imports:
   - spew
 - name: github.com/dgrijalva/jwt-go
   version: 63734eae1ef55eaac06fdc0f312615f2e321e273
+- name: github.com/docker/docker
+  version: 88862e707affccf9c46347361689b2ffef39dc5c
+  subpackages:
+  - api/types
+  - api/types/blkiodev
+  - api/types/container
+  - api/types/events
+  - api/types/filters
+  - api/types/mount
+  - api/types/network
+  - api/types/reference
+  - api/types/registry
+  - api/types/strslice
+  - api/types/swarm
+  - api/types/time
+  - api/types/versions
+  - api/types/volume
+  - cli
+  - client
+  - pkg/tlsconfig
+- name: github.com/docker/go-connections
+  version: 990a1a1a70b0da4c4cb70e117971a4f0babfbf1a
+  subpackages:
+  - nat
+  - sockets
+  - tlsconfig
 - name: github.com/eapache/go-resiliency
   version: b86b1ec0dd4209a588dc1285cdd471e73525c0b3
   subpackages:
@@ -250,6 +276,7 @@ imports:
   - idna
   - internal/timeseries
   - lex/httplex
+  - proxy
   - trace
 - name: golang.org/x/oauth2
   version: 1e695b1c8febf17aad3bfa7bf0a819ef94b98ad5
@@ -307,4 +334,17 @@ imports:
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/yaml.v2
   version: 31c299268d302dd0aa9a0dcf765a3d58971ac83f
-testImports: []
+testImports:
+- name: github.com/docker/distribution
+  version: 2d500932f2c7f032d2abc51f2ef940871d541319
+  subpackages:
+  - digest
+  - reference
+- name: github.com/docker/go-units
+  version: e30f1e79f3cd72542f2026ceec18d3bd67ab859c
+- name: github.com/Microsoft/go-winio
+  version: 24a3e3d3fc7451805e09d11e11e95d9a0a4f205e
+- name: github.com/opencontainers/runc
+  version: f376b8033d2caae5207de9be1ee4d4a695886af1
+  subpackages:
+  - libcontainer/user

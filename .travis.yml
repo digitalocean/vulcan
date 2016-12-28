@@ -5,6 +5,9 @@ services:
 
 language: go
 
+env:
+  - DOCKER_API_VERSION=1.24
+
 go:
   - 1.7.4
 
@@ -14,9 +17,7 @@ before_install:
 
 script:
   - make lint vet licensecheck test bin
-  - ci/install-docker-compose
   - ci/setup-docker-network
-  - ci/setup-dbs
   - make integration
 
 cache:

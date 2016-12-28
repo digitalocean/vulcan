@@ -9,7 +9,7 @@ import:
 - package: github.com/prometheus/common
   version: 85637ea67b04b5c3bb25e671dacded2977f8f9f6
   subpackages:
-  - model  
+  - model
 - package: github.com/Shopify/sarama
   version: f672ba54efeac37acc7a48c3c0cc732e402fcf34
   repo: https://github.com/supershabam/sarama
@@ -39,3 +39,12 @@ import:
   version: v1.0.4
   subpackages:
   - stats
+- package: github.com/docker/docker
+  version: v1.13.0-rc4
+  subpackages:
+  - cli
+  - client
+- package: github.com/docker/go-connections
+  version: v0.2.1
+  subpackages:
+  - nat
