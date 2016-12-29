@@ -28,7 +28,7 @@ docker: .makecache/docker
 
 integration:
 	@echo ">> running integration tests..."
-	@go test -tags=integration .
+	@go test -v -tags=integration .
 
 licensecheck:
 	@echo ">> checking for license"
