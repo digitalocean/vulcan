@@ -20,6 +20,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -36,6 +37,7 @@ import (
 )
 
 const (
+	kafkaImage               = "ches/kafka:0.10.1.0"
 	netcatImage              = "gophernet/netcat"
 	networkName              = "ci_vulcan"
 	waitForDependenciesImage = "dadarek/wait-for-dependencies:0.1"
@@ -45,6 +47,14 @@ const (
 
 func setup(ctx context.Context, c *client.Client) error {
 	err := buildVulcan(ctx, c)
+	if err != nil {
+		return err
+	}
+	err = setupZookeeper(ctx, c)
+	if err != nil {
+		return err
+	}
+	err = setupKafka(ctx, c)
 	if err != nil {
 		return err
 	}
@@ -80,7 +90,7 @@ func wait(ctx context.Context, c *client.Client, addr string) (int64, error) {
 	if err != nil {
 		return -1, err
 	}
-	tctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
+	tctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*50))
 	defer cancel()
 	return c.ContainerWait(tctx, cc.ID)
 }
@@ -95,19 +105,15 @@ func setupZookeeper(ctx context.Context, c *client.Client) error {
 	if err != nil {
 		return err
 	}
+	err = rc.Close()
+	if err != nil {
+		return err
+	}
 	cc, err := c.ContainerCreate(ctx, &container.Config{
 		Image: zookeeperImage,
 	}, &container.HostConfig{
 		AutoRemove:  true,
 		NetworkMode: networkName,
-		// PortBindings: nat.PortMap{
-		// 	"2181/tcp": []nat.PortBinding{
-		// 		{
-		// 			HostIP:   "0.0.0.0",
-		// 			HostPort: "0/tcp",
-		// 		},
-		// 	},
-		// },
 	}, &network.NetworkingConfig{}, "zk")
 	if err != nil {
 		return err
@@ -125,6 +131,74 @@ func setupZookeeper(ctx context.Context, c *client.Client) error {
 }
 
 func setupKafka(ctx context.Context, c *client.Client) error {
+	// ensure image is pulled and available before trying to create.
+	rc, err := c.ImagePull(ctx, kafkaImage, types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(os.Stderr, rc)
+	if err != nil {
+		return err
+	}
+	err = rc.Close()
+	if err != nil {
+		return err
+	}
+	cc, err := c.ContainerCreate(ctx, &container.Config{
+		Image: kafkaImage,
+		Env: []string{
+			"ZOOKEEPER_CONNECTION_STRING=zk:2181",
+		},
+	}, &container.HostConfig{
+		AutoRemove:  true,
+		NetworkMode: networkName,
+	}, &network.NetworkingConfig{}, "kafka")
+	if err != nil {
+		return err
+	}
+	err = c.ContainerStart(ctx, cc.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+	code, err := wait(ctx, c, "kafka:9092")
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("expected wait-for-dependencies return code to be 0 but got %d", code)
+	}
+	cc, err = c.ContainerCreate(ctx, &container.Config{
+		Image: kafkaImage,
+		Cmd: strslice.StrSlice{
+			"kafka-topics.sh",
+			"--create",
+			"--topic",
+			"vulcan-ci",
+			"--replication-factor",
+			"1",
+			"--partitions",
+			"48",
+			"--zookeeper",
+			"zk:2181",
+		},
+	}, &container.HostConfig{
+		AutoRemove:  true,
+		NetworkMode: networkName,
+	}, &network.NetworkingConfig{}, "")
+	if err != nil {
+		return err
+	}
+	err = c.ContainerStart(ctx, cc.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+	code, err = c.ContainerWait(ctx, cc.ID)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("expected wait-for-dependencies return code to be 0 but got %d", code)
+	}
 	return nil
 }
 
@@ -188,14 +262,18 @@ func runVulcanForwarder(ctx context.Context, c *client.Client) error {
 		Cmd: strslice.StrSlice{
 			"forwarder",
 		},
+		Env: []string{
+			"VULCAN_KAFKA_ADDRS=kafka:9092",
+			"VULCAN_KAFKA_TOPIC=vulcan-ci",
+		},
 	}, &container.HostConfig{
 		AutoRemove:  true,
 		NetworkMode: networkName,
 		PortBindings: nat.PortMap{
-			"8080/tcp": []nat.PortBinding{
+			"8888/tcp": []nat.PortBinding{
 				{
 					HostIP:   "0.0.0.0",
-					HostPort: "0/tcp",
+					HostPort: "0",
 				},
 			},
 		},
@@ -207,11 +285,6 @@ func runVulcanForwarder(ctx context.Context, c *client.Client) error {
 	if err != nil {
 		return err
 	}
-	// code, err := wait(ctx, c, "forwarder:8080")
-	// if err != nil {
-	// return err
-	// }
-	// spew.Dump(code)
 	return nil
 }
 
