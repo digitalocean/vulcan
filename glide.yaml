@@ -48,3 +48,5 @@ import:
   version: v0.2.1
   subpackages:
   - nat
+- package: github.com/oklog/ulid
+  version: v0.2.0

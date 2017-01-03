@@ -1,5 +1,5 @@
-hash: 33bda9380e3f0c0b377c349cf828de8bd23d8ddaae27cd8c388d3f3fa52f8dca
-updated: 2016-12-28T14:32:37.531484798-03:00
+hash: 43532a6c7dd5394abfba4d08f279ea4dac1e066c9a3fb84a22fab6aa8c5cc6ce
+updated: 2016-12-29T15:32:06.841909703-03:00
 imports:
 - name: cloud.google.com/go
   version: 07f82cd40595eddb6b6500701401032dd0bd92e0
@@ -150,6 +150,8 @@ imports:
   version: db96a2b759cdef4f11a34506a42eb8d1290c598e
 - name: github.com/mitchellh/mapstructure
   version: ca63d7c062ee3c9f34db231e352b60012b4fd0c1
+- name: github.com/oklog/ulid
+  version: 6a2184f14d45579b2d8e42f71f846dafb8299e7f
 - name: github.com/pelletier/go-buffruneio
   version: df1e16fde7fc330a0ca68167c23bf7ed6ac31d6d
 - name: github.com/pelletier/go-toml

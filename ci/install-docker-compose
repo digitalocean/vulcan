@@ -1,9 +1,0 @@
-#!/bin/bash
-
-set -ex
-
-sudo rm /usr/local/bin/docker-compose
-curl -L https://github.com/docker/compose/releases/download/1.9.0/docker-compose-Linux-x86_64 > /tmp/docker-compose
-echo "eeca988428d29534fecdff2768fa2e8c293b812b1c77da8ab5daf7f441c92e5b  /tmp/docker-compose" | sha256sum -c -
-chmod +x /tmp/docker-compose
-sudo mv /tmp/docker-compose /usr/local/bin/
