@@ -20,9 +20,11 @@ Vulcan is horizontally scalable and built for long-term storage. In order to acc
 Prometheus (as of v1.2.1) is able to forward metrics to Vulcan. Existing Prometheus deployments can easily reconfigure their Prometheus servers to forward all (or just some) metrics
 to Vulcan. Prometheus can continue operating as a simple and reliable monitoring system while utilizing Vulcan for long-term storage.
 
-_Vulcan is the roman god of fire, metalworking and of the forge. Raised in the [digital] ocean, Vulcan was charged with crafting the tools and weaponry to be used by the gods of olympus._
+### Why the name Vulcan?
 
-Vulcan aims to enhance the Prometheus ecosystem. Thanks for stealing us some fire to work with.
+_Vulcan is the roman god of fire, metalworking and of the forge. Raised in the [digital] ocean, Vulcan was charged with crafting the tools and weaponry._
+
+Vulcan aims to enhance the Prometheus ecosystem. Thank you Prometheus for stealing us fire in the first place.
 
 ## Architecture
 
