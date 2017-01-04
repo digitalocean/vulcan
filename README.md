@@ -1,8 +1,32 @@
 # Vulcan [![Build Status](https://travis-ci.org/digitalocean/vulcan.svg?branch=master)](https://travis-ci.org/digitalocean/vulcan) [![Report Card](https://goreportcard.com/badge/github.com/digitalocean/vulcan)](https://goreportcard.com/report/github.com/digitalocean/vulcan)
 
-Vulcan is an API-compatible extension to Prometheus. It aims to provide a better story for long-term storage, data durability, and high cardinality metrics while making sure that each component is horizontally scalable. Vulcan is much more complex to operate, but should integrate with ease to an existing Prometheus environment.
+Vulcan extends Prometheus adding horizontal scalability and long-term storage.
 
-Vulcan is highly experimental.
+_Vulcan is highly experimental._
+
+## Why
+
+Prometheus has an upper-limit on the number of samples it can handle and manually sharding Prometheus is difficult. Prometheus provides
+no built-in way to rebalance data between nodes once sharded, which makes accommodating additional load via adding nodes a difficult, manual process. Queries
+against manually-sharded Prometheus servers must be rethought since each Prometheus instance only has a subset of the total metrics.
+
+It is difficult to retain data in Prometheus for long-term storage as there is no built-in way to backup and restore Prometheus data. Mirroring
+Prometheus (running multiple identically-configured Prometheus servers) is an option for high availability (and good for the role of monitoring),
+but newly created mirrors lack historical data and therefore don't provide historical data any additional replication factor.
+
+Vulcan is horizontally scalable and built for long-term storage. In order to accommodate growing load, add more resources to Vulcan. There is no need to think about how to shard
+ data and how sharding will affect queries.
+
+Prometheus (as of v1.2.1) is able to forward metrics to Vulcan. Existing Prometheus deployments can easily reconfigure their Prometheus servers to forward all (or just some) metrics
+to Vulcan. Prometheus can continue operating as a simple and reliable monitoring system while utilizing Vulcan for long-term storage.
+
+_Vulcan is the roman god of fire, metalworking and of the forge. Raised in the [digital] ocean, Vulcan was charged with crafting the tools and weaponry to be used by the gods of olympus._
+
+Vulcan aims to enhance the Prometheus ecosystem. Thanks for stealing us some fire to work with.
+
+## Architecture
+
+Refer to [architecture.md](architecture.md)
 
 ## Contributing
 
@@ -14,94 +38,10 @@ The core developers are accessible via the [Vulcan Developers Mailinglist](https
 
 ## Ethos
 
-Vulcan should use open-source databases (e.g. Kafka, ElasticSearch, Cassandra)
+Vulcan components should be stateless; state should be handled by open-source databases (e.g. Cassandra, Kafka).
 
-Vulcan should strive to be API-compatible with Prometheus e.g. PromQL discussions and improvements should happen in the Prometheus community, committed in the Prometheus code base, and then used in Vulcan.
-
-# Architecture
-
-```
-       ┌─────────────────────┐                                        
-       │prometheus exporters ├─┐                                      
-       └─┬───────────────────┘ ├─┐                                    
-         └─┬───────────────────┘ │                                    
-           └─────────────────────┘                                    
-                      △                                               
-                  ┌───┘                                               
-                  ▼                                                   
-       ┌─────────────────────┐                                        
-       │     prometheus      │                                        
-       │                     │                                        
-       │(remote storage api) │                                        
-       └─────────────────────┘                                        
-                  │                                                   
-                  ▼                                                   
-       ┌─────────────────────┐                                        
-       │      forwarder      │                      ┌────────────┐    
-       └─────────────────────┘                    ┌─│downsamplers├─┐  
-                  │                               │ └─┬──────────┘ ├─┐
-                  └───────┐                       │   └─┬──────────┘ │
-                          │                       │     └────────────┘
-                          ▼                       ▼            ▲      
-  ┌──── ───── ───── ───── ───── ───── ───── ───── ┐            │      
-  │                     Kafka                     │◁───────────┘      
-  └── ───── ───── ───── ───── ───── ───── ───── ──┘                   
-                          △                                           
-         ┌────────────────┴─┬────────────────────┐                    
-         │                  │                    │                    
-         ▼                  ▼                    ▼                    
-  ┌────────────┐     ┌─────────────┐      ┌─────────────┐             
-  │  indexers  ├─┐   │  ingesters  ├─┐    │ compactors  ├─┐           
-  └─┬──────────┘ ├─┐ └─┬───────────┘ ├─┐  └─┬───────────┘ ├─┐         
-    └─┬──────────┘ │   └─┬───────────┘ │    └─┬───────────┘ │         
-      └────────────┘     └─────────────┘      └─────────────┘         
-             │                  │                    │                
-            ┌┘                  └─┬──────────────────┘                
-            │                     │                                   
-            ▼                     ▼                                   
-   ┌──── ───── ───── ┐    ┌──── ───── ────┐                           
-                     │    │                                           
-   │                 │    │               │                           
-   │  ElasticSearch  │        Cassandra   │                           
-   │                 │    │               │                           
-   │                      │               │                           
-   └ ───── ───── ────┘    └── ───── ───── ┘                           
-            △                     △                                   
-            └──┬──────────────────┘                                   
-               │                                                      
-               ▼                                                      
-         ┌──────────┐                       ┌───────────┐             
-         │ queriers ├─┐                     │  PromQL   │             
-         └─┬────────┘ ├─┐         ┌────────▶│  grafana  │             
-           └─┬────────┘ │◁────────┘         └───────────┘             
-             └──────────┘                                             
-```
-
-## Components
-
-### Forwarder
-
-A forwarder implements the Prometheus remote storage API. A forwarder should live close to a Prometheus server (even on the same machine). The forwarder consumes metrics from Prometheus and writes them into Vulcan in a format that Vulcan expects.
-
-### Downsamplers [ NOT IMPLEMENTED ]
-
-Downsamplers put lower resolution metrics onto the Vulcan metrics bus. They are a pool of workers consuming the metrics bus populated by the scrapers and writing their lower resolution version of those same metrics back onto the bus (but in a different topic). Lower resolution data can be more easily retained for long periods of time. Downsamplers are configurable to a target resolution. This allows a scraper configured for a high-frequency 15s resolution to passively also write metrics at a lower 10m resolution.
-
-### Indexers
-
-Indexers are a pool of workers that consume the metrics bus into a search database. Indexers do not care about the datapoints, rather, just what metrics exist. The search database is utilized by the querier in order to support the Prometheus Query Language.
-
-### Ingesters
-
-Ingesters are a pool of workers that consume the metrics bus into a datapoint database. The datapoints recorded should be queryable as soon as they are written. Ingesters read both the scraper's topic and the downsampler's topic into separate databases. The querier can decide based on the Prometheus QueryL what resolution database is most appropriate to fulfil the query.
-
-### Compactors [ NOT IMPLEMENTED ]
-
-Compactors are a pool of workers that consume the metrics bus into a datapoint database. Unlike the ingesters, the compactor does not immediately make metrics from the bus queryable. The compactor waits for a configurable time (e.g. 2 hours) per metric so that datapoints can be compressed and written into the datapoint database in a much more compact format. The querier attempts to fulfil a query from compacted data first, and then uncompressed data written by the ingesters. Compactors read both the scraper's topic and the downsampler's topic into separate databases.
-
-### Queriers
-
-Queriers are a pool web nodes that provide the Prometheus HTTP query API. The querier parses PromQL and queries the appropriate databases to get the raw datapoints and evalutates the PromQL functions on the data.
+Vulcan should be API-compatible with Prometheus. e.g. PromQL discussions and improvements should happen in the 
+Prometheus community, committed to Prometheus, and then utilized in Vulcan.
 
 ## License
 
