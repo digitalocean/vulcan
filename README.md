@@ -7,7 +7,7 @@ _Vulcan is highly experimental._
 ## Why
 
 Prometheus has an upper-limit on the number of samples it can handle and manually sharding Prometheus is difficult. Prometheus provides
-no built-in way to rebalance data between nodes once sharded which makes accommodating additional load via adding nodes a difficult, manual process. Queries
+no built-in way to rebalance data between nodes once sharded, which makes accommodating additional load via adding nodes a difficult, manual process. Queries
 against manually-sharded Prometheus servers must be rethought since each Prometheus instance only has a subset of the total metrics.
 
 It is difficult to retain data in Prometheus for long-term storage as there is no built-in way to backup and restore Prometheus data. Mirroring
