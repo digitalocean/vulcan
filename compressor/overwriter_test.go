@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	pmodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 )
 

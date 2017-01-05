@@ -184,7 +184,7 @@ func (m *Manager) handle(ctx context.Context, topic string, partition int32) {
 				log.WithError(err).Error("while creating consumer")
 				continue
 			}
-			cmpr, err := NewCompressor(&CompressorConfig{
+			cmpr, err := NewCompressor(&Config{
 				Consumer: c,
 				Context:  ctx,
 			})

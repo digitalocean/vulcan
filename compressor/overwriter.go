@@ -69,6 +69,9 @@ type OverwriterConfig struct {
 	Session *gocql.Session
 	Table   string
 	TTL     time.Duration
+	// Window is a duration relative to time.Now that if a previously flushed datapoint chunk
+	// is within the window, we will attempt to compact a new flush with this data and overwrite.
+	Window  time.Duration
 	Workers int
 }
 
@@ -148,6 +151,15 @@ func (o *Overwriter) flush(ctx context.Context, id string, c chunk.Chunk) error 
 		start := int64(c.FirstTime())
 		return o.upsert(ctx, id, start, c)
 	}
+	// we don't want to overwrite data in cassandra once it has been in the database long
+	// enough and has been compacted into more permenent sstables.
+	cutoff := time.Now().Add(o.cfg.Window)
+	start := int64(last.FirstTime())
+	t := time.Unix(start/1e3, start*1e6)
+	if t.Before(cutoff) {
+		// insert new chunk instead of trying to compact and overwrite the last chunk.
+		return o.upsert(ctx, id, start, c)
+	}
 	chunks, err := compact([]chunk.Chunk{last, c})
 	if err != nil {
 		return err
@@ -163,16 +175,14 @@ func (o *Overwriter) flush(ctx context.Context, id string, c chunk.Chunk) error 
 }
 
 func (o *Overwriter) worker() {
-	for {
-		select {
-		case <-o.cfg.Context.Done():
-			return
-		case w := <-o.work:
-			w.Return <- o.flush(w.Context, w.ID, w.Chunk)
-		}
+	for w := range o.work {
+		w.Return <- o.flush(w.Context, w.ID, w.Chunk)
 	}
 }
 
+// compact receives a time-ascending slice of chunks and returns a data-equivalent slice of
+// chunks where as many datapoints as possible are written to the first chunk and any
+// overflow is written to the following chunks.
 func compact(chunks []chunk.Chunk) ([]chunk.Chunk, error) {
 	result := make([]chunk.Chunk, 0, 1)
 	next, err := chunk.NewForEncoding(chunk.Varbit)
@@ -217,8 +227,7 @@ func compact(chunks []chunk.Chunk) ([]chunk.Chunk, error) {
 }
 
 // last returns a nil-able chunk for the last varbit chunk in cassandra.
-// Nil will be returned when there is no last value (or the value in the database
-// is too far in the past such that we don't want to overwrite it).
+// Nil will be returned when there is no last value.
 func (o *Overwriter) last(ctx context.Context, id string) (chunk.Chunk, error) {
 	buf := make([]byte, 0)
 	err := o.s.Query(o.lastSQL, id).WithContext(ctx).Scan(&buf)
