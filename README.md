@@ -12,7 +12,7 @@ against manually-sharded Prometheus servers must be rethought since each Prometh
 
 It is difficult to retain data in Prometheus for long-term storage as there is no built-in way to backup and restore Prometheus data. Mirroring
 Prometheus (running multiple identically-configured Prometheus servers) is an option for high availability (and good for the role of monitoring),
-but newly created mirrors lack historical data and therefore don't provide historical data any additional replication factor.
+but newly created mirrors lack historical data and therefore don't provide historical data or any additional replication factor.
 
 Vulcan is horizontally scalable and built for long-term storage. In order to accommodate growing load, add more resources to Vulcan. There is no need to think about how to shard
  data and how sharding will affect queries.
