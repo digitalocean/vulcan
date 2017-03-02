@@ -23,26 +23,27 @@ import (
 
 func (d *Downsampler) appendLastWrite(fqmn string, t int64) {
 	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	d.lastWrite[fqmn] = int64ToPt(t)
-	d.mutex.Unlock()
 }
 
 func (d *Downsampler) updateLastWrite(fqmn string, t int64) {
 	defer func() { d.stateHashLength.Set(float64(d.lenLastWrite())) }()
 
-	d.mutex.Lock()
+	d.mutex.RLock()
 
 	a, ok := d.lastWrite[fqmn]
 	if !ok {
 		// Unlock read mutext before appending to avoid deadlock with appendLastWrite.
-		d.mutex.Unlock()
+		d.mutex.RUnlock()
 		d.appendLastWrite(fqmn, t)
 
 		return
 	}
 	atomic.SwapInt64(a, t)
 
-	d.mutex.Unlock()
+	d.mutex.RUnlock()
 }
 
 func (d *Downsampler) updateLastWrites(tsb model.TimeSeriesBatch) {
@@ -52,8 +53,8 @@ func (d *Downsampler) updateLastWrites(tsb model.TimeSeriesBatch) {
 }
 
 func (d *Downsampler) getLastWriteValue(fqmn string) (timestampMS int64, ok bool) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
 
 	a, ok := d.lastWrite[fqmn]
 	if !ok {
