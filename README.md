@@ -1,3 +1,5 @@
+# Warning: This project is currently not maintained, and there is no plan to do so ATM.
+
 # Vulcan [![Build Status](https://travis-ci.org/digitalocean/vulcan.svg?branch=master)](https://travis-ci.org/digitalocean/vulcan) [![Report Card](https://goreportcard.com/badge/github.com/digitalocean/vulcan)](https://goreportcard.com/report/github.com/digitalocean/vulcan)
 
 Vulcan extends Prometheus adding horizontal scalability and long-term storage.
@@ -42,7 +44,7 @@ The core developers are accessible via the [Vulcan Developers Mailinglist](https
 
 Vulcan components should be stateless; state should be handled by open-source databases (e.g. Cassandra, Kafka).
 
-Vulcan should be API-compatible with Prometheus. e.g. PromQL discussions and improvements should happen in the 
+Vulcan should be API-compatible with Prometheus. e.g. PromQL discussions and improvements should happen in the
 Prometheus community, committed to Prometheus, and then utilized in Vulcan.
 
 ## License
